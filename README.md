@@ -1,5 +1,7 @@
-# Week 2
-##### Goals: ****Structure/Calculate values that will be represented in the table (e.g. average methylation, tumor-normal difference, associated genes, functional annotations, prevalence data) prior to starting the application generation.****
+# RScript Explanation
+##### Goals:
+
+Structure/Calculate values that will be represented in the table (e.g. average methylation, tumor-normal difference, associated genes, functional annotations, prevalence data) prior to starting the application generation.
 
 ## Overview
 
