@@ -9,6 +9,7 @@ library(plotly)
 
 data <- readRDS("/Users/paulaartizduenas/Desktop/Internship - IGTP/Dataset/Data Processed/data_app.rds")
 
+metadata <- data$metadata
 bin_table <- data$bin_table
 chrom_list <- c(as.character(1:22), "X", "Y")
 
@@ -513,7 +514,7 @@ server <- function(input, output, session) {
   
   
   # 2. Genome Browser
-
+  
   observeEvent(input$chr, {
     updateSelectInput(session, "browser_chr", selected = input$chr)
   })
@@ -563,6 +564,4 @@ server <- function(input, output, session) {
   )
   
 }
-
-# Run the application
 shinyApp(ui = ui, server = server)
