@@ -70,7 +70,7 @@ parse_genomic_search <- function(query, bin_table, chrom_list, gene_not_found, p
   if (!nzchar(q)) return(list(status = "error", message = "Please enter a coordinate, bin ID, or gene name."))
   q_nospace <- gsub(",", "", q)
   
-  # case 1: chr:start[-end] coordinate format
+  # Case 1: chr:start[-end] coordinate format
   coord_pattern <- "^(chr|Chr|CHR)?([0-9]{1,2}|[XxYy])\\s*:\\s*([0-9]+)\\s*(-\\s*([0-9]+))?$"
   if (grepl(coord_pattern, q_nospace)) {
     m <- regmatches(q_nospace, regexec(coord_pattern, q_nospace))[[1]]
@@ -86,7 +86,7 @@ parse_genomic_search <- function(query, bin_table, chrom_list, gene_not_found, p
     ))
   }
   
-  # case 2: bin ID format "chr_position"
+  # Case 2: bin ID format "chr_position"
   bin_pattern <- "^([0-9]{1,2}|[XxYy])_([0-9]+)$"
   if (grepl(bin_pattern, q_nospace)) {
     m <- regmatches(q_nospace, regexec(bin_pattern, q_nospace))[[1]]
@@ -103,7 +103,7 @@ parse_genomic_search <- function(query, bin_table, chrom_list, gene_not_found, p
     }
   }
   
-  # case 3: gene symbol already annotated on one or more bins
+  # Case 3: gene symbol already annotated on one or more bins
   gene_query <- toupper(q)
   has_annotation <- !is.na(bin_table$genes) &
     grepl(paste0("(^|[,;])\\s*", gene_query, "\\s*($|[,;])"), toupper(bin_table$genes))
@@ -114,7 +114,7 @@ parse_genomic_search <- function(query, bin_table, chrom_list, gene_not_found, p
                 message = paste0("Jumped to gene ", gene_query)))
   }
   
-  # case 4: gene symbol not in bin_table, fall back to the static gene_not_found lookup
+  # Case 4: gene symbol not in bin_table, fall back to the static gene_not_found lookup
   in_lookup <- gene_not_found[toupper(gene_not_found$gene) == gene_query, ]
   if (nrow(in_lookup) == 1) {
     return(list(
