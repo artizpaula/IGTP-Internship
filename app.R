@@ -513,10 +513,7 @@ server <- function(input, output, session) {
   
   
   # 2. Genome Browser
-  
-  # Keep the Genome Browser's chromosome selector in sync with the sidebar's
-  # "Chromosome" selector: picking a chromosome in the sidebar jumps the
-  # Genome Browser tab to that same chromosome.
+
   observeEvent(input$chr, {
     updateSelectInput(session, "browser_chr", selected = input$chr)
   })
