@@ -513,11 +513,135 @@ server <- function(input, output, session) {
   
   
   # 2. Genome Browser
+  nav <- reactiveValues(chr = NULL, start = NULL, end = NULL)
   
   observeEvent(input$chr, {
     updateSelectInput(session, "browser_chr", selected = input$chr)
   })
-  output$genome_browser <- renderPlot({
+  
+  observeEvent(input$browser_chr, {
+    if (!identical(nav$chr, input$browser_chr)) {
+      nav$chr   <- input$browser_chr
+      nav$start <- 1
+      nav$end   <- chrom_lengths[[input$browser_chr]]
+    }
+  }, ignoreInit = FALSE)
+  
+  observeEvent(input$prev_chr, {
+    idx <- match(nav$chr, chrom_list)
+    if (!is.na(idx) && idx > 1) {
+      updateSelectInput(session, "browser_chr", selected = chrom_list[idx - 1])
+    } else {
+      showNotification("Already at the first chromosome.", type = "message", duration = 2)
+    }
+  })
+  
+  observeEvent(input$next_chr, {
+    idx <- match(nav$chr, chrom_list)
+    if (!is.na(idx) && idx < length(chrom_list)) {
+      updateSelectInput(session, "browser_chr", selected = chrom_list[idx + 1])
+    } else {
+      showNotification("Already at the last chromosome.", type = "message", duration = 2)
+    }
+  })
+  
+  observeEvent(input$zoom_in, {
+    req(nav$chr)
+    v <- zoom_view(nav$start, nav$end, chrom_lengths[[nav$chr]], factor = 0.5)
+    nav$start <- v$start; nav$end <- v$end
+  })
+  
+  observeEvent(input$zoom_out, {
+    req(nav$chr)
+    v <- zoom_view(nav$start, nav$end, chrom_lengths[[nav$chr]], factor = 2)
+    nav$start <- v$start; nav$end <- v$end
+  })
+  
+  observeEvent(input$zoom_reset, {
+    req(nav$chr)
+    nav$start <- 1
+    nav$end <- chrom_lengths[[nav$chr]]
+  })
+  
+  observeEvent(input$browser_search_go, {
+    req(input$browser_search)
+    res <- parse_genomic_search(input$browser_search, bin_table, chrom_list, gene_not_found)
+    if (identical(res$status, "ok")) {
+      nav$chr   <- res$chr # set first so the browser_chr observer above sees it and skips its reset
+      nav$start <- max(1, floor(res$start))
+      nav$end   <- min(chrom_lengths[[res$chr]], ceiling(res$end))
+      if (nav$end <= nav$start) nav$end <- min(chrom_lengths[[res$chr]], nav$start + 2e6)
+      if (!identical(input$browser_chr, res$chr)) updateSelectInput(session, "browser_chr", selected = res$chr)
+      showNotification(res$message, type = "message", duration = 4)
+    } else {
+      showNotification(res$message, type = "error", duration = 5)
+    }
+  })
+  
+  # Clicking a point on the all-chromosomes overview jumps to that chromosome
+  observeEvent(event_data("plotly_click", source = "genome_overview"), {
+    ed <- event_data("plotly_click", source = "genome_overview")
+    req(ed, ed$customdata[1] %in% chrom_list)
+    updateSelectInput(session, "browser_chr", selected = ed$customdata[1])
+  })
+  
+  output$browser_position_header <- renderText({
+    req(nav$chr, nav$start, nav$end)
+    paste0(
+      "Genome Browser - chr", nav$chr, ": ",
+      format(round(nav$start), big.mark = ",", scientific = FALSE), "-",
+      format(round(nav$end), big.mark = ",", scientific = FALSE),
+      " (", format_bp(nav$end - nav$start), ")"
+    )
+  })
+  
+  browser_view_bins <- reactive({
+    req(nav$chr, nav$start, nav$end)
+    df <- bin_table[bin_table$chr == nav$chr & bin_table$bin_end >= nav$start & bin_table$bin_start <= nav$end, ]
+    df[order(df$bin_position), ]
+  })
+  
+  output$genome_overview_plot <- renderPlotly({
+    df <- genome_wide_bins
+    plot_ly(df, x = ~genome_x, y = ~overall_meth, color = ~chr_parity,
+      colors = c("#16324f", "#0e7c86"), customdata = ~as.character(chr),
+      type = "scatter", mode = "markers", marker = list(size = 4),
+      text = ~bin_id, hoverinfo = "text", source = "genome_overview") |>
+      layout(
+        showlegend = FALSE,
+        xaxis = list(title = "", tickvals = as.numeric(chr_mid), ticktext = chrom_list, tickangle = 45),
+        yaxis = list(title = "Mean methylation", range = c(0, 1)),
+        shapes = chr_boundary_shapes) |>
+      config(displayModeBar = FALSE) |>
+      event_register("plotly_click")
+  })
+  
+  output$browser_chr_plot <- renderPlotly({
+    df <- browser_view_bins()
+    if (nrow(df) == 0) {
+      return(
+        plotly_empty(type = "scatter", mode = "markers") |>
+          layout(title = list(text = "No bins in this region", font = list(size = 14)))
+      )
+    }
+    hl <- df$bin_id %in% selected_bins()
+    plot_ly(df, x = ~bin_position / 1e6) |>
+      add_trace(y = ~mean_methylation_tumor, type = "scatter", mode = "lines+markers", name = "Tumor",
+        line = list(color = "#d1495b"),
+        marker = list(color = "#d1495b", size = ifelse(hl, 11, 6),
+                      line = list(color = "#0b2436", width = ifelse(hl, 1.5, 0))),
+        text = ~paste0(bin_id, "<br>Tumor mean: ", round(mean_methylation_tumor, 3)), hoverinfo = "text") |>
+      add_trace(
+        y = ~mean_methylation_normal, type = "scatter", mode = "lines+markers", name = "Normal",
+        line = list(color = "#3aa9c9"),
+        marker = list(color = "#3aa9c9", size = ifelse(hl, 11, 6),
+                      line = list(color = "#0b2436", width = ifelse(hl, 1.5, 0))),
+        text = ~paste0(bin_id, "<br>Normal mean: ", round(mean_methylation_normal, 3)), hoverinfo = "text") |>
+      layout(
+        xaxis = list(title = paste0("Position on chr", nav$chr, " (Mb)")),
+        yaxis = list(title = "Mean methylation", range = c(0, 1)),
+        legend = list(orientation = "h", x = 0,y = 1, yanchor = "bottom")
+      )
   })
   
   # 3. Tumor vs. Normal
