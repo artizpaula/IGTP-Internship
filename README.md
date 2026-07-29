@@ -183,6 +183,8 @@ For every genomic bin, the script calculates:
 - Mean tumor methylation
 - Mean normal methylation
 - Mean paired tumor-normal difference
+- SD tumor methylation
+- SD normal methylation
 - Missing-value classification
 - Detection prevalence
 - Annotation placeholders
