@@ -206,30 +206,34 @@ prevalence_summary$prevalence_total <- ifelse(
 
 write.csv(prevalence_summary, file.path(output_dir, "Bin_prevalence_detection.csv"), row.names = FALSE)
 
-# 8. Final Table (Incloent MEAN i STANDARD DEVIATION)
-bin_means <- aggregate(
+# 8. Final Table
+
+# 8.1 Mean and SD computation
+mean_sd_summary <- aggregate(
   list(
-    mean_methylation_tumor = paired_diff$Tumor,
+    mean_methylation_tumor  = paired_diff$Tumor,
     mean_methylation_normal = paired_diff$Normal,
-    tumor_normal_diff = paired_diff$diff
+    sd_methylation_tumor    = paired_diff$Tumor,
+    sd_methylation_normal   = paired_diff$Normal,
+    tumor_normal_diff       = paired_diff$diff
   ),
   by = list(chr = paired_diff$chr, bin_position = paired_diff$bin_position),
-  FUN = function(x) mean(x, na.rm = TRUE)
+  FUN = function(x) c(mean = mean(x, na.rm = TRUE), sd = sd(x, na.rm = TRUE))
 )
 
-bin_sds <- aggregate(
-  list(
-    sd_methylation_tumor = paired_diff$Tumor,
-    sd_methylation_normal = paired_diff$Normal,
-    sd_tumor_normal_diff = paired_diff$diff
-  ),
-  by = list(chr = paired_diff$chr, bin_position = paired_diff$bin_position),
-  FUN = function(x) sd(x, na.rm = TRUE)
+bin_methylation_summary <- data.frame(
+  chr                     = mean_sd_summary$chr,
+  bin_position            = mean_sd_summary$bin_position,
+  mean_methylation_tumor  = mean_sd_summary$mean_methylation_tumor[, "mean"],
+  mean_methylation_normal = mean_sd_summary$mean_methylation_normal[, "mean"],
+  sd_methylation_tumor    = mean_sd_summary$sd_methylation_tumor[, "sd"],
+  sd_methylation_normal   = mean_sd_summary$sd_methylation_normal[, "sd"],
+  tumor_normal_diff       = mean_sd_summary$tumor_normal_diff[, "mean"]
 )
 
-bin_methylation_summary <- merge(bin_means, bin_sds, by = c("chr", "bin_position"))
 bin_methylation_summary$bin_id <- paste(bin_methylation_summary$chr, bin_methylation_summary$bin_position, sep = "_")
 
+# 8.2 Merges with rest of info
 bin_annotation$chr <- as.character(bin_annotation$chr)
 bin_annotation$bin_position <- as.integer(bin_annotation$bin_position)
 bin_na_summary$chr <- as.character(bin_na_summary$chr)
@@ -240,11 +244,11 @@ bin_methylation_summary_no_keys <- bin_methylation_summary[, !(names(bin_methyla
 bin_table <- merge(bin_table, bin_methylation_summary_no_keys, by = "bin_id", all.x = TRUE, sort = FALSE)
 bin_table <- merge(bin_table, prevalence_summary, by = c("chr", "bin_position"), all.x = TRUE, sort = FALSE)
 
+# 8.3 Sd included in final table
 bin_table <- bin_table[, c(
   "bin_id", "chr", "bin_position", "bin_start", "bin_end", "bin_status",
-  "mean_methylation_tumor", "sd_methylation_tumor",
-  "mean_methylation_normal", "sd_methylation_normal",
-  "tumor_normal_diff", "sd_tumor_normal_diff",
+  "mean_methylation_tumor", "mean_methylation_normal", 
+  "sd_methylation_tumor", "sd_methylation_normal", "tumor_normal_diff",
   "n_cpg", "n_alu", "genes", "functional_annotation",
   "n_present_Normal", "n_present_Tumor", "n_total_Normal", "n_total_Tumor",
   "prevalence_tumor", "prevalence_normal",
@@ -253,7 +257,7 @@ bin_table <- bin_table[, c(
 
 write.csv(bin_table, file.path(output_dir, "Bin_table.csv"), row.names = FALSE)
 
-# Save precomputed objects
+# RDS with full table
 saveRDS(
   list(metadata = metadata, methylation_long = methylation_long, bin_table = bin_table),
   file.path(output_dir, "data_app.rds")
