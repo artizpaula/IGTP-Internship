@@ -9,6 +9,7 @@ library(plotly)
 
 data <- readRDS("/Users/paulaartizduenas/Desktop/Internship - IGTP/Dataset/Data Processed/data_app.rds")
 
+metadata <- data$metadata
 bin_table <- data$bin_table
 chrom_list <- c(as.character(1:22), "X", "Y")
 
@@ -36,6 +37,7 @@ genome_wide_bins <- genome_wide_bins[order(genome_wide_bins$chr, genome_wide_bin
 genome_wide_bins$genome_x <- chr_offset[as.character(genome_wide_bins$chr)] + genome_wide_bins$bin_position
 genome_wide_bins$overall_meth <- rowMeans(
   genome_wide_bins[, c("mean_methylation_tumor", "mean_methylation_normal")], na.rm = TRUE)
+genome_wide_bins$chr_parity <- factor(as.integer(genome_wide_bins$chr) %% 2)
 
 # Dashed vertical lines marking chromosome boundaries, reused on both plots
 chr_boundary_shapes <- lapply(as.numeric(chr_offset)[-1], function(x) {
@@ -51,21 +53,60 @@ format_bp <- function(bp) {
   else sprintf("%.0f bp", bp)
 }
 
-# Static lookup table of hg19/UCSC coordinates for a few well-known cancer genes.
+# Static lookup table of hg19/GRCh37 coordinates for colorectal-cancer driver genes.
 # Used only as a fallback when a searched gene isn't already annotated in bin_table$genes.
-gene_not_found <- data.frame(
-  gene  = c("APC", "PIK3CA", "SMAD4", "PTEN",
-            "MLH1", "MSH2", "MSH6", "FBXW7"),
-  chr   = c("5", "3", "18", "10", "3", "2", "2", "4"),
-  start = c(112073582, 178866145, 48556583, 89623382,
-            37035009, 47630295, 48010284, 153241696),
-  end   = c(112181936, 178957881, 48611412, 89731687,
-            37092337, 47710362, 48034092, 153457244),
+# Gene set expanded (82 genes) with https://www.intogen.org/search and UCSC Genome Browser 
+gene_lookup_table <- data.frame(
+  gene = c(
+    "APC", "TP53", "KRAS", "PIK3CA", "SMAD4", "FBXW7", "SOX9", "AMER1",
+    "BRAF", "TCF7L2", "LRP1B", "ATM", "ARID1A", "NRAS", "KMT2C", "GRIN2A",
+    "PCBP1", "ERBB2", "MTOR", "CTNNB1", "BCL9L", "SMAD2", "CYLD", "ERBB3",
+    "PTEN", "BCL9", "TAF1L", "SMAD3", "RNF43", "ERBB4", "PIK3R1", "ACVR2A",
+    "MAP2K4", "ROBO2", "ARID1B", "TBX3", "ANK1", "PRKD1", "EPHA7", "SMARCA4",
+    "TGIF1", "DUSP16", "NF1", "SIRPA", "RBM10", "ACVR1B", "MYH9", "EGFR",
+    "BCOR", "NIN", "USP6", "EP300", "PTPN11", "AKT1", "PBRM1", "ELF3",
+    "PARP4", "MAP3K1", "TSC1", "ING1", "GNAS", "AFDN", "RRN3", "CSMD3",
+    "NBEA", "FAT4", "FAT3", "CDKN2A", "HRAS", "RNF6", "NCOR2", "SLC34A2",
+    "BIRC6", "RSPO2", "TGFBR2", "CTNNA1", "CEP89", "PPP2R1A", "DICER1", "CARD11",
+    "DCC", "BCORL1"),
+  chr   = c("5", "17", "12", "3", "18", "4", "17", "X",
+            "7", "10", "2", "11", "1", "1", "7", "16",
+            "2", "17", "1", "3", "11", "18", "16", "12",
+            "10", "1", "9", "15", "17", "2", "5", "2",
+            "17", "3", "6", "12", "8", "14", "6", "19",
+            "18", "12", "17", "20", "X", "12", "22", "7",
+            "X", "14", "17", "22", "12", "14", "3", "1",
+            "13", "5", "9", "13", "20", "6", "16", "8",
+            "13", "4", "11", "9", "11", "13", "12", "4",
+            "2", "8", "3", "5", "19", "19", "14", "7",
+            "18", "X"),
+  start = c(112073582, 7571739, 25358180, 178866145, 48556583, 153241696, 70117161, 63404997,
+            140419137, 114710006, 140988992, 108093794,27022506, 115247090, 151832010, 9847265,
+            70314609, 37856317, 11166592, 41240996, 118766845, 45335328, 50775997, 56473949,
+            89623382, 147013271, 32629452, 67357940, 56431037, 212240442, 67511584, 148602598,
+            11924194, 77089250, 157098512, 115108060, 41510744, 30045685, 93949738, 11071706,
+            3450170, 12626216, 29421995, 1876053, 47004620, 52345483, 36677326, 55086710, 
+            39910504, 51186481, 5019327, 41488596, 112856751, 105235686, 52579383, 201979715,
+            24995069, 56111376, 135766736, 111366047, 57414803, 168227591, 15153890, 113235157,
+            35516407,  126236110, 91957984, 21967751, 532242, 26786912, 124808961, 25657473,
+            32582091, 108911544,  30648093, 138089114, 33366831, 52693305, 95552565, 2945776,
+            49866567, 129116611),
+  end   = c(112181936, 7590808, 25403863, 178957881, 48611412, 153457244, 70122557, 63425588,
+            140624729, 114927437, 142888585, 108239829, 27108595, 115259392, 152133088, 10276285,
+            70316335, 37884911, 11322608, 41281934, 118796635, 45457030, 50835846, 56497289,
+            89731687, 147098017, 32635667, 67487507, 56494895, 213403526, 67597649, 148688391,
+            12047145, 77699115, 157531913, 115121980, 41655140, 30397053, 94129277, 11172949,
+            3459976, 12715797, 29704693, 1921238, 47046212, 52390862, 36784012, 55279321,
+            39957211, 51297880, 5078286, 41576081, 112947722, 105262085, 52719929, 201986311,
+            25086916, 56191979, 135820003, 111375686, 57486247, 168372703, 15188129, 114449168,
+            36246873, 126414087, 92629639, 21994391, 535576, 26796451, 125052158, 25680370,
+            32843945, 109095848, 30735634, 138270723, 33462864, 52732771, 95623866, 3083501,
+            51062269, 129192046),
   stringsAsFactors = FALSE
-) 
+)
 
 # Parses a free-text genome browser search box into a (chr, start, end) target
-parse_genomic_search <- function(query, bin_table, chrom_list, gene_not_found, pad = 2e6) {
+parse_genomic_search <- function(query, bin_table, chrom_list, gene_lookup_table, pad = 2e6) {
   q <- trimws(query)
   if (!nzchar(q)) return(list(status = "error", message = "Please enter a coordinate, bin ID, or gene name."))
   q_nospace <- gsub(",", "", q)
@@ -114,8 +155,8 @@ parse_genomic_search <- function(query, bin_table, chrom_list, gene_not_found, p
                 message = paste0("Jumped to gene ", gene_query)))
   }
   
-  # Case 4: gene symbol not in bin_table, fall back to the static gene_not_found lookup
-  in_lookup <- gene_not_found[toupper(gene_not_found$gene) == gene_query, ]
+  # Case 4: gene symbol not in bin_table, fall back to the static gene_lookup_table
+  in_lookup <- gene_lookup_table[toupper(gene_lookup_table$gene) == gene_query, ]
   if (nrow(in_lookup) == 1) {
     return(list(
       status = "ok", chr = in_lookup$chr,
@@ -126,6 +167,65 @@ parse_genomic_search <- function(query, bin_table, chrom_list, gene_not_found, p
     ))
   }
   list(status = "error", message = paste0("'", q, "' was not recognized as a coordinate, bin ID, or gene name."))
+}
+
+# Parses an uploaded file of bins (.csv, .tsv, .txt, or unrecognized extension) into a
+# vector of bin_id values that exist in bin_table
+
+parse_bin_file <- function(filepath, filename, bin_table, chrom_list) {
+  ext <- tolower(tools::file_ext(filename))
+  raw_ids <- character(0)
+  tbl <- NULL
+  
+  # Only attempt structured table
+  if (ext %in% c("csv", "tsv")) {
+    sep <- if (ext == "tsv") "\t" else ","
+    tbl <- tryCatch(
+      utils::read.csv(filepath, sep = sep, header = TRUE, stringsAsFactors = FALSE, check.names = FALSE),
+      error = function(e) NULL)
+  }
+  
+  if (!is.null(tbl) && ncol(tbl) >= 1 && nrow(tbl) >= 1) {
+    nm <- tolower(trimws(names(tbl)))
+    id_col  <- which(nm %in% c("bin_id", "bin", "id"))
+    chr_col <- which(nm %in% c("chr", "chromosome", "chrom"))
+    pos_col <- which(nm %in% c("bin_position", "position", "pos", "start"))
+    if (length(id_col) >= 1) {
+      raw_ids <- as.character(tbl[[id_col[1]]])
+    } else if (length(chr_col) >= 1 && length(pos_col) >= 1) {
+      raw_ids <- paste0(tbl[[chr_col[1]]], "_", tbl[[pos_col[1]]])
+    } else if (ncol(tbl) == 1) {
+      # single unlabeled column - could be a header row that's actually the first ID
+      raw_ids <- c(names(tbl)[1], as.character(tbl[[1]]))
+    } else {
+      raw_ids <- as.character(unlist(tbl))
+    }
+  }
+  
+  # Fall back to treating the file as plain, unstructured text
+  if (length(raw_ids) == 0) {
+    txt <- tryCatch(readLines(filepath, warn = FALSE), error = function(e) character(0))
+    txt <- paste(txt, collapse = "\n")
+    raw_ids <- strsplit(txt, "[,;\\s]+", perl = TRUE)[[1]]
+  }
+  
+  raw_ids <- trimws(raw_ids)
+  raw_ids <- raw_ids[nzchar(raw_ids)]
+  n_entries <- length(unique(raw_ids))
+  
+  # Normalize formatting differences: drop "chr" prefix, unify ":"/"-" separators to "_"
+  norm <- toupper(raw_ids)
+  norm <- sub("^CHR", "", norm)
+  norm <- gsub("[:\\-]", "_", norm)
+  norm <- gsub("_+", "_", norm)
+  norm <- unique(norm)
+  
+  bin_lookup <- toupper(bin_table$bin_id)
+  hit <- match(norm, bin_lookup)
+  matched <- unique(bin_table$bin_id[hit[!is.na(hit)]])
+  unmatched <- norm[is.na(hit)]
+  
+  list(matched = matched, unmatched = unmatched, n_entries = n_entries)
 }
 
 # Zooms in and out
@@ -240,6 +340,19 @@ ui <- page_sidebar(
       class = "btn-sm class=btn-outline-light w-100"
     ),
     
+    fileInput(
+      "bins_file",
+      "Or upload bins to select:",
+      accept = c(".csv", ".tsv", ".txt", "text/csv", "text/tab-separated-values", "text/plain"),
+      placeholder = "No file selected",
+      buttonLabel = "Browse..."
+    ),
+    tags$div(
+      "Accepts .csv/.tsv/.txt ",
+      "or a plain list of bin IDs like 1_1000000, one per line or comma-separated).",
+      style = "font-size:11px; color:#7d92a3; margin-top:-10px; margin-bottom:8px;"
+    ),
+    
     hr(style = "margin:1px 0; border-color:#3a5470;"),
     
     tags$div(
@@ -303,10 +416,15 @@ ui <- page_sidebar(
       ),
       
       card(
+        card_header("All chromosomes, click a point to jump to that chromosome"),
+        plotlyOutput("genome_overview_plot", height = "420px")
+      ),
+      
+      card(
         card_header(textOutput("browser_position_header", inline = TRUE)),
         
         div(
-          style = "display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:12px;",
+          style = "display:flex; flex-wrap:wrap; gap:0px; align-items:center",
           
           div(
             style = "display:flex; gap:6px; align-items:center; flex:1 1 320px; min-width:280px;",
@@ -331,7 +449,7 @@ ui <- page_sidebar(
           )
         ),
         
-        plotlyOutput("browser_chr_plot", height = "460px"),
+        plotlyOutput("browser_chr_plot",height = "560px"),
         
         tags$div(
           "Tip: bins currently in your sidebar selection are outlined on the plot above. ",
@@ -476,6 +594,40 @@ server <- function(input, output, session) {
     )
   })
   
+  # File upload: parse the uploaded file and add any recognized bins to the selection
+  observeEvent(input$bins_file, {
+    req(input$bins_file)
+    res <- parse_bin_file(input$bins_file$datapath, input$bins_file$name, bin_table, chrom_list)
+    
+    if (length(res$matched) == 0) {
+      showNotification(
+        paste0("Couldn't match any bins in '", input$bins_file$name, "'. ",
+               "Expecting a 'bin_id' column, 'chr'+'position' columns, or a plain list of IDs like 1_1000000."),
+        type = "error", duration = 7
+      )
+      return()
+    }
+    
+    updated <- union(input$bins, res$matched)
+    updateSelectizeInput(
+      session, "bins",
+      choices = bin_table$bin_id,
+      selected = updated,
+      server = TRUE
+    )
+    
+    msg <- paste0(length(res$matched), " of ", res$n_entries, " bin(s) from '",
+                  input$bins_file$name, "' were selected.")
+    if (length(res$unmatched) > 0) {
+      preview <- paste(utils::head(res$unmatched, 5), collapse = ", ")
+      if (length(res$unmatched) > 5) preview <- paste0(preview, ", ...")
+      msg <- paste0(msg, " ", length(res$unmatched), " entr",
+                    if (length(res$unmatched) == 1) "y" else "ies",
+                    " not recognized (", preview, ").")
+    }
+    showNotification(msg, type = if (length(res$unmatched) > 0) "warning" else "message", duration = 7)
+  })
+  
   # Bins currently in scope for the analyses: whatever the user picked,or (if none picked) every bin in the selected chromosome
   selected_bins <- reactive({ # use the bins explicitly selected by the user
     if (length(input$bins) > 0) {
@@ -489,6 +641,7 @@ server <- function(input, output, session) {
   selected_bin_table <- reactive({
     bin_table[bin_table$bin_id %in% selected_bins(), ]
   })
+  
   
   # 1. Overview
   output$n_samples <- renderText({
@@ -565,7 +718,7 @@ server <- function(input, output, session) {
   
   observeEvent(input$browser_search_go, {
     req(input$browser_search)
-    res <- parse_genomic_search(input$browser_search, bin_table, chrom_list, gene_not_found)
+    res <- parse_genomic_search(input$browser_search, bin_table, chrom_list, gene_lookup_table)
     if (identical(res$status, "ok")) {
       nav$chr   <- res$chr # set first so the browser_chr observer above sees it and skips its reset
       nav$start <- max(1, floor(res$start))
@@ -603,10 +756,10 @@ server <- function(input, output, session) {
   
   output$genome_overview_plot <- renderPlotly({
     df <- genome_wide_bins
-    plot_ly(df, x = ~genome_x, y = ~overall_meth, color = ~chr_parity,
-      colors = c("#16324f", "#0e7c86"), customdata = ~as.character(chr),
-      type = "scatter", mode = "markers", marker = list(size = 4),
-      text = ~bin_id, hoverinfo = "text", source = "genome_overview") |>
+    p <- plot_ly(df, x = ~genome_x, y = ~overall_meth, color = ~chr_parity,
+                 colors = c("#16324f", "#0e7c86"), customdata = ~as.character(chr),
+                 type = "scatter", mode = "markers", marker = list(size = 4),
+                 text = ~bin_id, hoverinfo = "text", source = "genome_overview") |>
       layout(
         showlegend = FALSE,
         xaxis = list(title = "", tickvals = as.numeric(chr_mid), ticktext = chrom_list, tickangle = 45),
@@ -624,13 +777,17 @@ server <- function(input, output, session) {
           layout(title = list(text = "No bins in this region", font = list(size = 14)))
       )
     }
-    hl <- df$bin_id %in% selected_bins()
+    # Only highlight bins the user has explicitly picked in the sidebar - selecting a
+    # chromosome alone should not light up every bin on it (selected_bins() falls back
+    # to the whole chromosome when input$bins is empty, which is right for the "in
+    # scope" bin table/downloads, but wrong for this highlight).
+    hl <- df$bin_id %in% input$bins
     plot_ly(df, x = ~bin_position / 1e6) |>
       add_trace(y = ~mean_methylation_tumor, type = "scatter", mode = "lines+markers", name = "Tumor",
-        line = list(color = "#d1495b"),
-        marker = list(color = "#d1495b", size = ifelse(hl, 11, 6),
-                      line = list(color = "#0b2436", width = ifelse(hl, 1.5, 0))),
-        text = ~paste0(bin_id, "<br>Tumor mean: ", round(mean_methylation_tumor, 3)), hoverinfo = "text") |>
+                line = list(color = "#d1495b"),
+                marker = list(color = "#d1495b", size = ifelse(hl, 11, 6),
+                              line = list(color = "#0b2436", width = ifelse(hl, 1.5, 0))),
+                text = ~paste0(bin_id, "<br>Tumor mean: ", round(mean_methylation_tumor, 3)), hoverinfo = "text") |>
       add_trace(
         y = ~mean_methylation_normal, type = "scatter", mode = "lines+markers", name = "Normal",
         line = list(color = "#3aa9c9"),
@@ -682,8 +839,7 @@ server <- function(input, output, session) {
       "bintable.csv"},
     content = function(file) {
       write.csv(selected_bin_table(), file, row.names = FALSE)
-    }
-  )
+    })
   
 }
 
