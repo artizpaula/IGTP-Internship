@@ -6,34 +6,140 @@ library(bslib)
 library(bsicons) # icons for value boxes
 library(DT)
 library(plotly)
+library(ggplot2)
+library(patchwork) # aligns the annotation strip + heatmap with independent legends
 
-data <- readRDS("/Users/paulaartizduenas/Desktop/Internship - IGTP/Dataset/Data Processed/data_app.rds")
+data <- readRDS("/Users/paulaartizduenas/Desktop/Project/Dataset/Data Processed/data_app.rds")
 
 metadata <- data$metadata
 bin_table <- data$bin_table
+methylation_long <- data$methylation_long
 chrom_list <- c(as.character(1:22), "X", "Y")
 
 # Ordered bin choices for the bin-selector (grouped by chromosome, sorted by position)
-bin_table <- bin_table[order(match(bin_table$chr, chrom_list),bin_table$bin_position), ]
+bin_table <- bin_table[order(match(bin_table$chr, chrom_list), bin_table$bin_position), ]
 bin_choices_by_chr <- split(bin_table$bin_id, factor(bin_table$chr, levels = chrom_list))
 
-# Length of each chromosome, inferred from the last bin on it (bin_end)
+# Bin Table tab: derived columns + registries
+
+# Human-readable "start–end" label for a bin, e.g. "1 MB-2 MB"
+format_mb_label <- function(bp) {
+  mb <- bp / 1e6
+  if (abs(mb - round(mb)) < 1e-9) paste0(round(mb)," MB")
+  else paste0(format(round(mb, 1), nsmall = 1)," MB")
+}
+format_bin_coordinates <- function(start, end) {
+  paste0(format_mb_label(start), "\u2013", format_mb_label(end))
+}
+bin_table$bin_coordinates <- mapply(format_bin_coordinates, bin_table$bin_start, bin_table$bin_end)
+
+# Per-sample tumor/normal methylation columns used to compute per-bin SD
+tumor_sample_pattern  <- "^tumor_sample"
+normal_sample_pattern <- "^normal_sample"
+tumor_sample_cols  <- grep(tumor_sample_pattern, names(bin_table), value = TRUE)
+normal_sample_cols <- grep(normal_sample_pattern, names(bin_table), value = TRUE)
+
+# Standard deviation not found in data_app.rds
+if (!"sd_methylation_tumor" %in% names(bin_table)) bin_table$sd_methylation_tumor <- NA_real_
+if (!"sd_methylation_normal" %in% names(bin_table)) bin_table$sd_methylation_normal <- NA_real_
+
+# Mean Difference Metric (Tumor - Normal)
+bin_table$mean_diff_tumor_normal <- bin_table$mean_methylation_tumor - bin_table$mean_methylation_normal
+
+# Counts of Alus and CpGs per 1 Mb bin, computed upstream in Week_2_With_Prevalence.R
+if (!"n_alu" %in% names(bin_table)) bin_table$n_alu <- NA_real_
+if (!"n_cpg" %in% names(bin_table)) bin_table$n_cpg <- NA_real_
+
+# Columns shown in the Bin Table tab, in display order
+bin_table_columns <- list(
+  list(id = "bin_id", label = "Bin ID"),
+  list(id = "bin_coordinates", label = "Bin Coordinates"),
+  list(id = "mean_methylation_tumor", label = "Mean Meth (Tumor)", digits = 3),
+  list(id = "mean_methylation_normal", label = "Mean Meth (Normal)", digits = 3),
+  list(id = "sd_methylation_tumor", label = "SD Meth (Tumor)", digits = 3),
+  list(id = "sd_methylation_normal",label = "SD Meth (Normal)", digits = 3),
+  list(id = "mean_diff_tumor_normal",  label = "Mean Diff (Tumor - Normal)", digits = 3),
+  list(id = "n_alu", label = "Alu Count"),
+  list(id = "n_cpg", label = "CpG Count"))
+
+# Numeric metrics exposed as filters
+bin_table_filters <- list(
+  list(id = "mean_methylation_tumor", label = "Mean Meth (Tumor)", op = ">="),
+  list(id = "mean_methylation_normal", label = "Mean Meth (Normal)", op = ">="),
+  list(id = "sd_methylation_tumor", label = "SD Meth (Tumor)", op = ">="),
+  list(id = "sd_methylation_normal",label = "SD Meth (Normal)", op = ">="),
+  list(id = "mean_diff_tumor_normal", label = "Mean Diff (Tumor - Normal)", op = ">=")
+)
+
+# Builds visual grid of slider inputs for the Bin Table filters
+build_bin_table_filter_inputs <- function(filters, df) {
+  lapply(filters, function(f) {
+    vals <- df[[f$id]]
+    vals <- vals[is.finite(vals)]
+    rng <- if (length(vals) > 0) range(vals) else c(0, 1)
+    
+    lo <- floor(rng[1] * 100) / 100
+    hi <- ceiling(rng[2] * 100) / 100
+    if (hi <= lo) hi <- lo + 0.01
+    
+    div(
+      style = "flex: 1 1 200px; min-width: 180px; max-width: 250px;",
+      sliderInput(
+        inputId = paste0("binfilter_", f$id),
+        label = paste0(f$label, " ", f$op),
+        min = lo, max = hi, value = lo, step = 0.01,
+        width = "100%"
+      )
+    )
+  })
+}
+
+# Applies all configured filters to a bin_table subset.
+apply_bin_table_filters <- function(df, filters, input) {
+  for (f in filters) {
+    threshold <- input[[paste0("binfilter_", f$id)]]
+    if (is.null(threshold)) next
+    col <- df[[f$id]]
+    if (is.null(col) || all(is.na(col))) next
+    keep <- switch(f$op,
+                   ">=" = !is.na(col) & col >= threshold,
+                   ">"  = !is.na(col) & col >  threshold,
+                   rep(TRUE, nrow(df))
+    )
+    df <- df[keep, , drop = FALSE]
+  }
+  df
+}
+
+# Builds the display data frame from bin_table_columns.
+build_display_bin_table <- function(df, columns = bin_table_columns) {
+  col_ids <- vapply(columns, function(c) c$id, character(1))
+  out <- df[, col_ids, drop = FALSE]
+  for (i in seq_along(columns)) {
+    if (!is.null(columns[[i]]$digits)) out[[i]] <- round(out[[i]], columns[[i]]$digits)
+  }
+  names(out) <- vapply(columns, function(c) c$label, character(1))
+  out
+}
+
+# Length of each chromosome
 chrom_lengths <- tapply(bin_table$bin_end, bin_table$chr, max)
 chrom_lengths <- setNames(as.numeric(chrom_lengths[chrom_list]), chrom_list)
 
-# Cumulative genome-wide offset so all chromosomes can sit end-to-end on one axis
+# Cumulative genome-wide offset
 chr_offset <- setNames(numeric(length(chrom_list)), chrom_list)
 running <- 0
 for (chr in chrom_list) {
   chr_offset[chr] <- running
-  running <- running + chrom_lengths[[chr]]}
+  running <- running + chrom_lengths[[chr]]
+}
 total_genome_len <- running
 chr_mid <- chr_offset + chrom_lengths / 2
 
 # Genome-wide bin table
 genome_wide_bins <- bin_table
 genome_wide_bins$chr <- factor(genome_wide_bins$chr, levels = chrom_list)
-genome_wide_bins <- genome_wide_bins[order(genome_wide_bins$chr, genome_wide_bins$bin_position), ] # bin's within-chromosome position -> genome-wide x-coordinate
+genome_wide_bins <- genome_wide_bins[order(genome_wide_bins$chr, genome_wide_bins$bin_position), ]
 genome_wide_bins$genome_x <- chr_offset[as.character(genome_wide_bins$chr)] + genome_wide_bins$bin_position
 genome_wide_bins$overall_meth <- rowMeans(
   genome_wide_bins[, c("mean_methylation_tumor", "mean_methylation_normal")], na.rm = TRUE)
@@ -45,17 +151,10 @@ chr_boundary_shapes <- lapply(as.numeric(chr_offset)[-1], function(x) {
        line = list(color = "rgba(150,150,150,0.4)", width = 1, dash = "dot"))
 })
 
-# Print base-pair distance
-format_bp <- function(bp) {
-  bp <- abs(bp)
-  if (bp >= 1e6) sprintf("%.2f Mb", bp / 1e6)
-  else if (bp >= 1e3) sprintf("%.0f kb", bp / 1e3)
-  else sprintf("%.0f bp", bp)
-}
-
 # Static lookup table of hg19/GRCh37 coordinates for colorectal-cancer driver genes.
 # Used only as a fallback when a searched gene isn't already annotated in bin_table$genes.
 # Gene set expanded (82 genes) with https://www.intogen.org/search and UCSC Genome Browser 
+
 gene_lookup_table <- data.frame(
   gene = c(
     "APC", "TP53", "KRAS", "PIK3CA", "SMAD4", "FBXW7", "SOX9", "AMER1",
@@ -78,7 +177,8 @@ gene_lookup_table <- data.frame(
             "X", "14", "17", "22", "12", "14", "3", "1",
             "13", "5", "9", "13", "20", "6", "16", "8",
             "13", "4", "11", "9", "11", "13", "12", "4",
-            "2", "8", "3", "5", "19", "19", "14", "7", "18", "X"),
+            "2", "8", "3", "5", "19", "19", "14", "7",
+            "18", "X"),
   start = c(112073582, 7571739, 25358180, 178866145, 48556583, 153241696, 70117161, 63404997,
             140419137, 114710006, 140988992, 108093794,27022506, 115247090, 151832010, 9847265,
             70314609, 37856317, 11166592, 41240996, 118766845, 45335328, 50775997, 56473949,
@@ -88,7 +188,8 @@ gene_lookup_table <- data.frame(
             39910504, 51186481, 5019327, 41488596, 112856751, 105235686, 52579383, 201979715,
             24995069, 56111376, 135766736, 111366047, 57414803, 168227591, 15153890, 113235157,
             35516407,  126236110, 91957984, 21967751, 532242, 26786912, 124808961, 25657473,
-            32582091, 108911544,  30648093, 138089114, 33366831, 52693305, 95552565, 2945776, 49866567, 129116611),
+            32582091, 108911544,  30648093, 138089114, 33366831, 52693305, 95552565, 2945776,
+            49866567, 129116611),
   end   = c(112181936, 7590808, 25403863, 178957881, 48611412, 153457244, 70122557, 63425588,
             140624729, 114927437, 142888585, 108239829, 27108595, 115259392, 152133088, 10276285,
             70316335, 37884911, 11322608, 41281934, 118796635, 45457030, 50835846, 56497289,
@@ -98,7 +199,8 @@ gene_lookup_table <- data.frame(
             39957211, 51297880, 5078286, 41576081, 112947722, 105262085, 52719929, 201986311,
             25086916, 56191979, 135820003, 111375686, 57486247, 168372703, 15188129, 114449168,
             36246873, 126414087, 92629639, 21994391, 535576, 26796451, 125052158, 25680370,
-            32843945, 109095848, 30735634, 138270723, 33462864, 52732771, 95623866, 3083501, 51062269, 129192046),
+            32843945, 109095848, 30735634, 138270723, 33462864, 52732771, 95623866, 3083501,
+            51062269, 129192046),
   stringsAsFactors = FALSE
 )
 
@@ -237,59 +339,26 @@ zoom_view <- function(start, end, chr_len, factor, min_width = 2e6) {
   new_start <- max(1, new_start)
   list(start = round(new_start), end = round(new_end))}
 
-# Define UI
+# UI Definition
+
 ui <- page_sidebar(
   title = div(
-    style = "
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    width: 100%;
-    gap: 1px;
-    padding: 22px 5px;
-    border-bottom: 1px solid rgba(255,255,255,0.08);
-  ",
-    # Left block: title
+    style = "display: flex; justify-content: space-between; align-items: center; width: 100%; gap: 1px; padding: 22px 5px; border-bottom: 1px solid rgba(255,255,255,0.08);",
     div(
-      style = "
-      flex:1 1 auto;
-      min-width:0;
-    ",
+      style = "flex:1 1 auto; min-width:0;",
       h2("Exploration of Epigenomic Data in Colorectal Cancer", style = "margin:0; font-weight:600; letter-spacing:0.2px; white-space:normal;")
     ),
     div(
-      style = "
-      display:flex;
-      gap:14px;
-      align-items:center;
-      margin-left:auto;
-    ",
+      style = "display:flex; gap:14px; align-items:center; margin-left:auto;",
       div(
-        style = "
-        display:flex;
-        align-items:center;
-        gap:8px;
-        border:1px solid #3a5470;
-        border-radius:8px;
-        padding:8px 14px;
-      ",
+        style = "display:flex; align-items:center; gap:8px; border:1px solid #3a5470; border-radius:8px; padding:8px 14px;",
         bs_icon("person", size = "2em"),
-        textOutput("n_patients", inline = TRUE),
-        " patients"
+        textOutput("n_patients", inline = TRUE), " patients"
       ),
-      
       div(
-        style = "
-        display:flex;
-        align-items:center;
-        gap:8px;
-        border:1px solid #3a5470;
-        border-radius:8px;
-        padding:8px 14px;
-      ",
+        style = "display:flex; align-items:center; gap:8px; border:1px solid #3a5470; border-radius:8px; padding:8px 14px;",
         bs_icon("clipboard-data", size = "2em"),
-        textOutput("n_samples", inline = TRUE),
-        " samples"
+        textOutput("n_samples", inline = TRUE), " samples"
       )
     )
   ),
@@ -306,227 +375,36 @@ ui <- page_sidebar(
   
   sidebar = sidebar(
     width = 300,
-    
-    tags$div(
-      "DATA SELECTION",
-      style = "font-size:14px; font-weight:700; letter-spacing:0.8px; color:#7d92a3; margin-bottom:0px;"
-    ),
+    tags$div("DATA SELECTION", style = "font-size:14px; font-weight:700; letter-spacing:0.8px; color:#7d92a3; margin-bottom:0px;"),
     selectInput("chr", "Chromosome:", choices = chrom_list),
-    
-    selectizeInput(
-      "bins",
-      "Selected bins:",
-      choices = NULL,
-      multiple = TRUE,
-      options = list(
-        placeholder = "Find and select bins (ex: 1_1000000)...",
-        plugins = list("remove_button")
-      )
+    selectizeInput("bins", "Selected bins:", choices = NULL, multiple = TRUE, options = list(placeholder = "Find and select bins (ex: 1_1000000)...", plugins = list("remove_button"))),
+    actionButton("add_chr_bins", "Add all bins on the chromosome", icon = bs_icon("plus-circle"), class = "btn-sm class=btn-outline-light w-100"),
+    actionButton("clear_bins", "Clear bin selection", icon = bs_icon("x-circle"), class = "btn-sm class=btn-outline-light w-100"),
+    fileInput("bins_file", "Or upload bins to select:", accept = c(".csv", ".tsv", ".txt", "text/csv", "text/tab-separated-values", "text/plain"), placeholder = "No file selected", buttonLabel = "Browse..."),
+    tags$div("Accepts .csv/.tsv/.txt or a plain list of bin IDs like 1_1000000, one per line or comma-separated).", style = "font-size:11px; color:#7d92a3; margin-top:-10px; margin-bottom:8px;"),
+    hr(style = "margin:1px 0; border-color:#3a5470;")
     ),
-    
-    actionButton(
-      "add_chr_bins",
-      "Add all bins on the chromosome",
-      icon = bs_icon("plus-circle"),
-      class = "btn-sm class=btn-outline-light w-100"),
-    
-    actionButton(
-      "clear_bins",
-      "Clear bin selection",
-      icon = bs_icon("x-circle"),
-      class = "btn-sm class=btn-outline-light w-100"
-    ),
-    
-    fileInput(
-      "bins_file",
-      "Or upload bins to select:",
-      accept = c(".csv", ".tsv", ".txt", "text/csv", "text/tab-separated-values", "text/plain"),
-      placeholder = "No file selected",
-      buttonLabel = "Browse..."
-    ),
-    tags$div(
-      "Accepts .csv/.tsv/.txt ",
-      "or a plain list of bin IDs like 1_1000000, one per line or comma-separated).",
-      style = "font-size:11px; color:#7d92a3; margin-top:-10px; margin-bottom:8px;"
-    ),
-    
-    hr(style = "margin:1px 0; border-color:#3a5470;"),
-    
-    tags$div(
-      "DISPLAY OPTIONS",
-      style = "font-size:14px; font-weight:700; letter-spacing:0.8px; color:#7d92a3; margin-bottom:0px;"
-    ),
-    
-    selectInput("clinical_var", "Colour/group by:", choices = c(
-      "Sample type"    = "Type",
-      "Sex"            = "sexe_label",
-      "Stage"          = "estadi2",
-      "MSI/MSS status" = "MSS",
-      "KRAS status"    = "KRAS",
-      "BRAF status"    = "BRAF",
-      "TP53 status"    = "TP53"
-    )),
-    
-    selectInput(
-      "feature_type",
-      "Genomic feature:",
-      choices = c(
-        "All", "Promoter", "Gene body",
-        "Intergenic", "Enhancer"
-      )
-    )
-  ),
   
   navset_card_underline(
     title = "Exploration and Visualization",
     
     # 1. Overview
-    nav_panel(
-      "Overview",
-      layout_columns(
-        col_widths = c(4, 4, 4),
-        card(
-          card_header("Tumor vs Normal Methylation"),
-          plotOutput("overview_boxplot", height = "260px"),
-          height = "310px"
-        ),
-        card(
-          card_header("Mutation status (KRAS / BRAF / TP53)"),
-          plotOutput("overview_mutations", height = "260px"),
-          height = "310px"
-        ),
-        card(
-          card_header("Sex / Stage / MSS composition"),
-          plotOutput("overview_composition", height = "260px"),
-          height = "310px"
-        )
-      )
-    ),
+    nav_panel("Overview", layout_columns(col_widths = c(4, 4, 4), card(card_header("Tumor vs Normal Methylation"), plotOutput("overview_boxplot", height = "260px"), height = "310px"), card(card_header("Mutation status (KRAS / BRAF / TP53)"), plotOutput("overview_mutations", height = "260px"), height = "310px"), card(card_header("Sex / Stage / MSS composition"), plotOutput("overview_composition", height = "260px"), height = "310px"))),
     
     # 2. Genome Browser
-    nav_panel(
-      "Genome Browser",
-      div(
-        style = "font-size:13px; color:#6c757d; margin-bottom:10px;",
-        "Browse methylation across the whole genome: pick a chromosome, zoom in/out, ",
-        "or search by coordinates, bin ID, or gene name."
-      ),
-      
-      card(
-        card_header("All chromosomes, click a point to jump to that chromosome"),
-        plotlyOutput("genome_overview_plot", height = "420px")
-      ),
-      
-      card(
-        card_header(textOutput("browser_position_header", inline = TRUE)),
-        
-        div(
-          style = "display:flex; flex-wrap:wrap; gap:0px; align-items:center",
-          
-          div(
-            style = "display:flex; gap:6px; align-items:center; flex:1 1 320px; min-width:280px;",
-            textInput("browser_search", label = NULL,
-                      placeholder = "e.g. 12:25000000-26000000, 12_25000000, or KRAS", width = "100%"),
-            actionButton("browser_search_go", NULL, icon = bs_icon("search"), class = "btn-sm btn-outline-secondary")
-          ),
-          
-          div(
-            style = "display:flex; gap:4px; align-items:center;",
-            actionButton("prev_chr", NULL, icon = bs_icon("chevron-left"), class = "btn-sm btn-outline-secondary"),
-            selectInput("browser_chr", NULL, choices = chrom_list, selected = "1", width = "90px"),
-            actionButton("next_chr", NULL, icon = bs_icon("chevron-right"), class = "btn-sm btn-outline-secondary")
-          ),
-          
-          div(
-            style = "display:flex; gap:4px;",
-            actionButton("zoom_in", NULL, icon = bs_icon("zoom-in"), class = "btn-sm btn-outline-secondary"),
-            actionButton("zoom_out", NULL, icon = bs_icon("zoom-out"), class = "btn-sm btn-outline-secondary"),
-            actionButton("zoom_reset", "Whole chromosome", icon = bs_icon("arrow-counterclockwise"),
-                         class = "btn-sm btn-outline-secondary")
-          )
-        ),
-        
-        plotlyOutput("browser_chr_plot",height = "560px"),
-        
-        tags$div(
-          "Tip: bins currently in your sidebar selection are outlined on the plot above. ",
-          "You can also drag directly on the plot to zoom, and double-click it to reset.",
-          style = "font-size:11px; color:#7d92a3; margin-top:6px;"
-        )
-      ),
-      
-      # Press Enter in the search box to trigger the same action as the Go button
-      tags$script(HTML(
-        "$(document).on('keydown', '#browser_search', function(e) {
-           if (e.key === 'Enter') { e.preventDefault(); $('#browser_search_go').trigger('click'); }
-         });"
-      ))
-    ),
+    nav_panel("Genome Browser", div(style = "font-size:13px; color:#6c757d; margin-bottom:10px;", "Browse methylation across the whole genome: pick a chromosome, zoom in/out, or search by coordinates, bin ID, or gene name."), card(card_header("All chromosomes, click a point to jump to that chromosome"), plotlyOutput("genome_overview_plot", height = "420px")), card(card_header(textOutput("browser_position_header", inline = TRUE)), div(style = "display:flex; flex-wrap:wrap; gap:0px; align-items:center", div(style = "display:flex; gap:6px; align-items:center; flex:1 1 320px; min-width:280px;", textInput("browser_search", label = NULL, placeholder = "e.g. 12:25000000-26000000, 12_25000000, or KRAS", width = "100%"), actionButton("browser_search_go", NULL, icon = bs_icon("search"), class = "btn-sm btn-outline-secondary")), div(style = "display:flex; gap:4px; align-items:center;", actionButton("prev_chr", NULL, icon = bs_icon("chevron-left"), class = "btn-sm btn-outline-secondary"), selectInput("browser_chr", NULL, choices = chrom_list, selected = "1", width = "90px"), actionButton("next_chr", NULL, icon = bs_icon("chevron-right"), class = "btn-sm btn-outline-secondary")), div(style = "display:flex; gap:4px;", actionButton("zoom_in", NULL, icon = bs_icon("zoom-in"), class = "btn-sm btn-outline-secondary"), actionButton("zoom_out", NULL, icon = bs_icon("zoom-out"), class = "btn-sm btn-outline-secondary"), actionButton("zoom_reset", "Whole chromosome", icon = bs_icon("arrow-counterclockwise"), class = "btn-sm btn-outline-secondary"))), plotlyOutput("browser_chr_plot", height = "560px"), tags$div("Tip: bins currently in your sidebar selection are outlined on the plot above. You can also drag directly on the plot to zoom, and double-click it to reset.", style = "font-size:11px; color:#7d92a3; margin-top:6px;"))),
     
-    # 3. Tumor vs. Normal
-    nav_panel(
-      "Tumor vs. Normal",
-      layout_columns(
-        col_widths = c(6, 6, 12),
-        card(
-          card_header("Methylation density (Tumor vs Normal)"),
-          plotOutput("tn_density")
-        ),
-        card(
-          card_header("PCA / UMAP (interactive)"),
-          radioButtons(
-            "proj_method",
-            NULL,
-            choices = c("PCA", "UMAP"),
-            inline = TRUE
-          ),
-          plotlyOutput("tn_projection", height = "400px")
-        ),
-        card(
-          card_header("Patient similarity network"),
-          plotOutput("tn_network", height = "500px")
-        )
-      )
-    ),
+    # 3. Tumor vs Normal
+    nav_panel("Tumor vs. Normal", layout_columns(col_widths = c(6, 6, 12), card(card_header("Methylation density (Tumor vs Normal)"), plotOutput("tn_density")), card(card_header("PCA / UMAP (interactive)"), radioButtons("proj_method", NULL, choices = c("PCA", "UMAP"), inline = TRUE), plotlyOutput("tn_projection", height = "400px")), card(card_header("Patient similarity network"), plotOutput("tn_network", height = "500px")))),
     
     # 4. Genome-wide Profile
-    nav_panel(
-      "Genome-wide Profile",
-      card(
-        card_header("Manhattan-style plot: Tumor - Normal methylation difference"),
-        plotlyOutput("manhattan_plot", height = "550px")
-      )
-    ),
+    nav_panel("Genome-wide Profile", card(card_header("Manhattan-style plot: Tumor - Normal methylation difference"), plotlyOutput("manhattan_plot", height = "550px"))),
     
-    # 5. Feature × Chromosome Heatmap
-    nav_panel(
-      "Feature × Chromosome Heatmap",
-      card(
-        card_header("Diverging heatmap of methylation shift (feature × chromosome)"),
-        plotOutput("feature_heatmap", height = "600px")
-      )
-    ),
+    # 5. Feature x Chromosome Heatmap
+    nav_panel("Feature × Chromosome Heatmap", card(card_header("Diverging heatmap of selected features from metadata"), plotOutput("feature_heatmap", height = "600px"))),
     
     # 6. Clinical Explorer
-    nav_panel(
-      "Clinical Explorer",
-      layout_columns(
-        col_widths = c(5, 7),
-        card(
-          card_header("Methylation by mutation status"),
-          selectInput(
-            "mutation_gene",
-            "Gene:",
-            choices = c("KRAS", "BRAF", "TP53")
-          ),
-          plotOutput("clinical_boxplot")
-        ),
-        card(
-          card_header("Clinical metadata table"),
-          DTOutput("clinical_table")
-        )
-      )
-    ),
+    nav_panel("Clinical Explorer", layout_columns(col_widths = c(5, 7), card(card_header("Methylation by mutation status"), selectInput("mutation_gene", "Gene:", choices = c("KRAS", "BRAF", "TP53")), plotOutput("clinical_boxplot")), card(card_header("Clinical metadata table"), DTOutput("clinical_table")))),
     
     # 7. Bin Table
     nav_panel(
