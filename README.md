@@ -277,8 +277,6 @@ Current placeholders that still require implementation include:
 
 - Associated genes (`genes`)
 - Functional annotations (`functional_annotation`)
-- CpG counts (`n_cpg`)
-- Alu repeat counts (`n_alu`)
 
 These columns are generated as templates and are intended to be completed in future versions of the pipeline.
 
