@@ -7,7 +7,6 @@ library(bsicons) # icons for value boxes
 library(DT)
 library(plotly)
 library(ggplot2)
-library(patchwork) # aligns the annotation strip + heatmap with independent legends
 
 data <- readRDS("/Users/paulaartizduenas/Desktop/Project/Dataset/Data Processed/data_app.rds")
 
@@ -436,96 +435,48 @@ ui <- page_sidebar(
 )
 
 # Server
+
 server <- function(input, output, session) {
   
-  # Bin selection
+  updateSelectizeInput(session, "bins", choices = bin_table$bin_id, server = TRUE)
   
-  # Populate the bin selection (server-side)
-  updateSelectizeInput(
-    session, "bins",
-    choices = bin_table$bin_id,
-    server = TRUE
-  )
-  
-  # Button: add all bins of the currently selected chromosome to the selection
   observeEvent(input$add_chr_bins, {
     chr_bins <- bin_choices_by_chr[[input$chr]]
     updated <- union(input$bins, chr_bins)
-    updateSelectizeInput(
-      session, "bins",
-      choices = bin_table$bin_id,
-      selected = updated,
-      server = TRUE
-    )
+    updateSelectizeInput(session, "bins", choices = bin_table$bin_id, selected = updated, server = TRUE)
   })
   
-  # Button: clear bin selection
   observeEvent(input$clear_bins, {
-    updateSelectizeInput(
-      session, "bins",
-      choices = bin_table$bin_id,
-      selected = character(0),
-      server = TRUE
-    )
+    updateSelectizeInput(session, "bins", choices = bin_table$bin_id, selected = character(0), server = TRUE)
   })
   
-  # File upload: parse the uploaded file and add any recognized bins to the selection
   observeEvent(input$bins_file, {
     req(input$bins_file)
     res <- parse_bin_file(input$bins_file$datapath, input$bins_file$name, bin_table, chrom_list)
-    
     if (length(res$matched) == 0) {
-      showNotification(
-        paste0("Couldn't match any bins in '", input$bins_file$name, "'. ",
-               "Expecting a 'bin_id' column, 'chr'+'position' columns, or a plain list of IDs like 1_1000000."),
-        type = "error", duration = 7
-      )
+      showNotification("Couldn't match any bins in file.", type = "error", duration = 7)
       return()
     }
-    
     updated <- union(input$bins, res$matched)
-    updateSelectizeInput(
-      session, "bins",
-      choices = bin_table$bin_id,
-      selected = updated,
-      server = TRUE
-    )
-    
-    msg <- paste0(length(res$matched), " of ", res$n_entries, " bin(s) from '",
-                  input$bins_file$name, "' were selected.")
-    if (length(res$unmatched) > 0) {
-      preview <- paste(utils::head(res$unmatched, 5), collapse = ", ")
-      if (length(res$unmatched) > 5) preview <- paste0(preview, ", ...")
-      msg <- paste0(msg, " ", length(res$unmatched), " entr",
-                    if (length(res$unmatched) == 1) "y" else "ies",
-                    " not recognized (", preview, ").")
-    }
-    showNotification(msg, type = if (length(res$unmatched) > 0) "warning" else "message", duration = 7)
+    updateSelectizeInput(session, "bins", choices = bin_table$bin_id, selected = updated, server = TRUE)
   })
   
-  # Bins currently in scope for the analyses: whatever the user picked,or (if none picked) every bin in the selected chromosome
-  selected_bins <- reactive({ # use the bins explicitly selected by the user
-    if (length(input$bins) > 0) {
-      input$bins
-    } else {
-      bin_choices_by_chr[[input$chr]]
-    }
+  selected_bins <- reactive({
+    if (length(input$bins) > 0) input$bins else bin_choices_by_chr[[input$chr]]
   })
   
-  # Subset of bin_table matching the current bin selection
   selected_bin_table <- reactive({
     bin_table[bin_table$bin_id %in% selected_bins(), ]
   })
   
+  filtered_bin_table <- reactive({
+    apply_bin_table_filters(selected_bin_table(), bin_table_filters, input)
+  })
+  
+  output$n_samples <- renderText({ nrow(metadata) })
+  output$n_patients <- renderText({ length(unique(metadata$patient_id)) })
   
   # 1. Overview
-  output$n_samples <- renderText({
-    nrow(metadata)
-  })
-  
-  output$n_patients <- renderText({
-    length(unique(metadata$patient_id))
-  })
   
   output$overview_sex_comparison <- renderPlot({
   })
@@ -538,7 +489,6 @@ server <- function(input, output, session) {
   
   output$overview_composition <- renderPlot({
   })
-  
   
   # 2. Genome Browser
   nav <- reactiveValues(chr = NULL, start = NULL, end = NULL)
@@ -619,7 +569,7 @@ server <- function(input, output, session) {
       "Genome Browser - chr", nav$chr, ": ",
       format(round(nav$start), big.mark = ",", scientific = FALSE), "-",
       format(round(nav$end), big.mark = ",", scientific = FALSE),
-      " (", format_bp(nav$end - nav$start), ")"
+      " (", format_mb_label(nav$end - nav$start), ")"
     )
   })
   
@@ -652,10 +602,7 @@ server <- function(input, output, session) {
           layout(title = list(text = "No bins in this region", font = list(size = 14)))
       )
     }
-    # Only highlight bins the user has explicitly picked in the sidebar - selecting a
-    # chromosome alone should not light up every bin on it (selected_bins() falls back
-    # to the whole chromosome when input$bins is empty, which is right for the "in
-    # scope" bin table/downloads, but wrong for this highlight).
+    # Only highlight bins the user has explicitly picked in the sidebar
     hl <- df$bin_id %in% input$bins
     plot_ly(df, x = ~bin_position / 1e6) |>
       add_trace(y = ~mean_methylation_tumor, type = "scatter", mode = "lines+markers", name = "Tumor",
@@ -672,7 +619,7 @@ server <- function(input, output, session) {
       layout(
         xaxis = list(title = paste0("Position on chr", nav$chr, " (Mb)")),
         yaxis = list(title = "Mean methylation", range = c(0, 1)),
-        legend = list(orientation = "h", x = 0,y = 1, yanchor = "bottom")
+        legend = list(orientation = "h", x = 0, y = 1, yanchor = "bottom")
       )
   })
   
@@ -692,6 +639,7 @@ server <- function(input, output, session) {
   
   # 5. Feature × Chromosome Heatmap
   output$feature_heatmap <- renderPlot({
+    
   })
   
   # 6. Clinical Explorer
