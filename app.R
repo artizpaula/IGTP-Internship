@@ -3,10 +3,11 @@
 
 library(shiny)
 library(bslib)
-library(bsicons) # icons used for value boxes
+library(bsicons) # icons for value boxes
 library(DT)
 library(plotly)
 library(ggplot2)
+library(patchwork) # aligns the annotation strip + heatmap with independent legends
 
 data <- readRDS("/Users/paulaartizduenas/Desktop/Project/Dataset/Data Processed/data_app.rds")
 
@@ -409,32 +410,39 @@ ui <- page_sidebar(
     nav_panel(
       "Bin Table",
       card(
-        card_header("Filterable bin-level data"),
-        downloadButton("bintable_download", "Download CSV"),
+        card_header("Filterable Bin-level Data"),
+        tags$details(
+          open = "open",
+          style = "background: #ffffff; border: 1px solid #16324f; border-radius: 8px; padding: 16px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);",
+          tags$summary(
+            style = "font-weight: 600; font-size: 15px; color: #16324f; cursor: pointer; display: flex; align-items: center; gap: 8px;",
+            bs_icon("sliders", size = "1.2em"),
+            "Filter Bin Metrics"
+          ),
+          div(
+            style = "display: flex; flex-wrap: wrap; gap: 16px; margin-top: 14px; align-items: center;",
+            build_bin_table_filter_inputs(bin_table_filters, bin_table)
+          )
+        ),
+        div(
+          style = "display: flex; justify-content: flex-start; margin-bottom: 15px;",
+          downloadButton(
+            "bintable_download", 
+            "Download CSV Data", 
+            icon = icon("download"),
+            class = "btn-lg btn-primary",
+            style = "font-weight: 600; padding: 10px 22px; font-size: 15px; border-radius: 6px;"
+          )
+        ),
         DTOutput("bintable")
       )
     )
   ),
   
-  div(
-    style = "
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    gap:18px;
-    margin-top:24px;
-    padding:16px 0;
-    border-top:1px solid #dde3e8;
-    color:#6c757d;
-    font-size:13px;
-  ", tags$span(
-    "Paula Artiz Dueñas, Institut Germans Trias i Pujol (IGTP) - Universitat Politècnica de Catalunya (UPC)",
-    style = "margin-left:10px;"
-  )
-  )
+  div(style = "display:flex; align-items:center; justify-content:center; gap:18px; margin-top:24px; padding:16px 0; border-top:1px solid #dde3e8; color:#6c757d; font-size:13px;", tags$span("Paula Artiz Dueñas, Institut Germans Trias i Pujol (IGTP) - Universitat Politècnica de Catalunya (UPC)", style = "margin-left:10px;"))
 )
 
-# Server
+# Server Definition
 
 server <- function(input, output, session) {
   
@@ -651,19 +659,19 @@ server <- function(input, output, session) {
   
   # 7. Bin Table
   output$bintable <- renderDT({
-    datatable(selected_bin_table(),
-              options = list(scrollX = TRUE, pageLength = 15),
-              rownames = FALSE
+    datatable(
+      build_display_bin_table(filtered_bin_table()),
+      options = list(scrollX = TRUE, pageLength = 15),
+      rownames = FALSE
     )
   })
   
   output$bintable_download <- downloadHandler(
-    filename = function() {
-      "bintable.csv"},
+    filename = function() { "bintable.csv" },
     content = function(file) {
-      write.csv(selected_bin_table(), file, row.names = FALSE)
-    })
-  
+      write.csv(build_display_bin_table(filtered_bin_table()), file, row.names = FALSE)
+    }
+  )
 }
 
 shinyApp(ui = ui, server = server)
