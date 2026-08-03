@@ -9,7 +9,7 @@ library(jsonlite) # JSON reading
 library(data.table) # fast reading/aggregation of the large raw per-CpG methylation tables
 
 # CpG/Alu-per-bin counting functions used in section 5b below
-source("Alus_and_CpGs.R")
+source("Alus_and_CpGs.R") # runs code from the other script in this one
 
 # Directory paths (personal paths)
 # Paths
