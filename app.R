@@ -3,7 +3,7 @@
 
 library(shiny)
 library(bslib)
-library(bsicons) # icons for value boxes
+library(bsicons) # icons used for value boxes
 library(DT)
 library(plotly)
 library(ggplot2)
