@@ -8,40 +8,38 @@ read_methylation_table <- function(filepath) {
 
   first_line <- readLines(filepath, n = 1L, warn = FALSE)
   if (length(first_line) == 0L || !nzchar(first_line)) {
-    return(data.table(chr = character(0), pos = integer(0),
-                       CpG = character(0), alu_region = character(0)))
+    return(data.table(chr = character(0), pos = integer(0), 
+                       CpG = character(0), alu_region = character(0))) # empty file gets an empty table with the right columns
   }
-  first_fields <- trimws(strsplit(first_line, "\t", fixed = TRUE)[[1]])
-  has_header <- tolower(first_fields[1]) == "chr"
+  first_fields <- trimws(strsplit(first_line, "\t", fixed = TRUE)[[1]]) # get individual columns
+  has_header <- tolower(first_fields[1]) == "chr" # first row is a header if first entry is "chr
 
   if (has_header) {
     # Identify columns by name, never by fixed position.
-    header_lower <- tolower(first_fields)
-    idx_chr <- match("chr", header_lower)
-    idx_end <- match("end", header_lower)
-    idx_cpg <- match("cpg", header_lower)
-    idx_alu <- match("alu_region", header_lower)
+    header_lower <- tolower(first_fields) # lowercases header names
+    idx_chr <- match("chr", header_lower) # finds which column has the chromosome
+    idx_end <- match("end", header_lower) # finds which column has the end position in the chr
+    idx_cpg <- match("cpg", header_lower) # finds which column has the CpG values
+    idx_alu <- match("alu_region", header_lower) # finds which column has the alu values
     if (anyNA(c(idx_chr, idx_end, idx_cpg, idx_alu))) {
       stop("Could not find required column(s) chr/end/CpG/alu_region in header of: ", filepath)
     }
     dt <- fread(filepath, sep = "\t", header = TRUE,
                 select = c(idx_chr, idx_end, idx_cpg, idx_alu),
                 na.strings = c("", "NA", "."), showProgress = FALSE)
-    setnames(dt, c("chr", "pos", "CpG", "alu_region"))
+    setnames(dt, c("chr", "pos", "CpG", "alu_region")) # rename the extracted columns (easier for later steps)
 
   } else {
     # No header row results in fall back to the documented column layouts by position
     ncol_detected <- length(first_fields)
     if (ncol_detected == 8L) {
-      # chr start end CpG meth_pct meth unmeth alu_region
-      idx_chr <- 1L; idx_end <- 3L; idx_cpg <- 4L; idx_alu <- 8L
+      idx_chr <- 1L; idx_end <- 3L; idx_cpg <- 4L; idx_alu <- 8L # chr start end CpG meth_pct meth unmeth alu_region
     } else if (ncol_detected == 10L) {
       # chr start end CpG strand meth_pct meth unmeth compartment alu_region, (as in run134)
       idx_chr <- 1L; idx_end <- 3L; idx_cpg <- 4L; idx_alu <- 10L
     } else {
-      # Fallback for unexpected layouts
       idx_chr <- 1L; idx_end <- 3L; idx_cpg <- 4L; idx_alu <- ncol_detected
-      warning("Unexpected column count (", ncol_detected, ") with no header in ", filepath)
+      warning("Unexpected column count (", ncol_detected, ") with no header in ", filepath)       # Fallback for unexpected layouts
     }
     dt <- fread(filepath, sep = "\t", header = FALSE,select = c(idx_chr, idx_end, idx_cpg, idx_alu),
                 na.strings = c("", "NA", "."), showProgress = FALSE)
@@ -49,7 +47,7 @@ read_methylation_table <- function(filepath) {
   }
 
   # Ensure consistent column types
-  dt[,chr:=as.character(chr)]
+  dt[,chr:=as.character(chr)] # "1" -> "chr1"
   dt[, pos := suppressWarnings(as.integer(pos))]
   dt[,CpG := as.character(CpG)]
   dt[,alu_region := as.character(alu_region)]
@@ -62,7 +60,7 @@ read_methylation_table <- function(filepath) {
 assign_bins <- function(dt, bin_size = 1e6) {
   bin_size <- as.integer(bin_size)
   # Compute genomic bin boundaries
-  dt[, bin_start := (pos - 1L) %/% bin_size * bin_size + 1L]
+  dt[, bin_start := (pos - 1L) %/% bin_size * bin_size + 1L] # find position by bin size
   dt[, bin_end   := bin_start + bin_size - 1L]
   dt
 }
@@ -75,8 +73,8 @@ summarize_bins <- function(dt, bin_size = 1e6) {
   
   # counting CpGs and unique Alu elements per bin
   out <- dt[, .(
-    n_CpGs = sum(!is.na(CpG) & nzchar(CpG)),
-    n_Alus = uniqueN(alu_region[!is.na(alu_region) & nzchar(alu_region)])
+    n_CpGs = sum(!is.na(CpG) & nzchar(CpG)), # counts every row in the bin that has a non-empty CpG entry (each row=one CpG site)
+    n_Alus = uniqueN(alu_region[!is.na(alu_region) & nzchar(alu_region)]) # counts distinct alu regions in the bin, unique alu (if alu is in many rows it is only counted once)
   ), by = .(chr, bin_start, bin_end)]
   setorder(out, chr, bin_start)
   out[]
@@ -93,10 +91,10 @@ bin_methylation_file <- function(filepath, bin_size = 1e6) {
 #Turn a raw file/entry name into a short, readable sample ID.
 derive_sample_id <- function(entry_path) {
   fname <- basename(entry_path)
-  fname <- sub("\\.(tsv|txt)$", "", fname, ignore.case = TRUE)
-  fname <- sub("\\.RGok.*$", "", fname) # strip long aligner/QC suffix chain
-  fname <- sub("_collapsed$", "", fname)
-  fname <- sub("_sorted$", "", fname)
+  fname <- sub("\\.(tsv|txt)$", "", fname, ignore.case = TRUE) # keeps just file name
+  fname <- sub("\\.RGok.*$", "", fname) #drop .tsv or .txt extension
+  fname <- sub("_collapsed$", "", fname) # removes _collapsed from file name
+  fname <- sub("_sorted$", "", fname) # removes _sorted from file name
   fname
 }
 
@@ -117,10 +115,10 @@ process_tar_archive <- function(tar_path, bin_size = 1e6, exdir = tempdir(), cle
 }
 
 # Scan a directory for raw methylation input: .tar.gz archives
-list_raw_methylation_files <- function(input_dir, tar_pattern = "\\.tar\\.gz$|_tar\\.gz$|\\.tgz$", flat_pattern = "\\.tsv$|\\.txt$") {
-  tar_files  <- list.files(input_dir, pattern = tar_pattern, full.names = TRUE, ignore.case = TRUE)
-  flat_files <- list.files(input_dir, pattern = flat_pattern, full.names = TRUE, ignore.case = TRUE)
-  list(tar_files = tar_files, flat_files = flat_files)
+list_raw_methylation_files <- function(input_dir, tar_pattern = "\\.tar\\.gz$|_tar\\.gz$|\\.tgz$", flat_pattern = "\\.tsv$|\\.txt$") { 
+  tar_files  <- list.files(input_dir, pattern = tar_pattern, full.names = TRUE, ignore.case = TRUE) # finds any compressed files in directory
+  flat_files <- list.files(input_dir, pattern = flat_pattern, full.names = TRUE, ignore.case = TRUE) # finds any loose files in direct
+  list(tar_files = tar_files, flat_files = flat_files) # merge files together
 }
 
 # Main entry point: process every raw sample found in input_dir
@@ -145,7 +143,7 @@ process_all_raw_methylation <- function(input_dir, output_dir = NULL, bin_size =
   }
 
   # Save results if an output directory was provided
-  if (!is.null(output_dir) && length(all_results) > 0) {
+  if (!is.null(output_dir) && length(all_results) > 0) { 
     dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
     for (sample_id in names(all_results)) {
       safe_name <- gsub("[^A-Za-z0-9_.-]", "_", sample_id)
@@ -168,16 +166,16 @@ aggregate_bin_annotation <- function(sample_tables, fun = c("max", "sum", "mean"
   }
   combined <- rbindlist(sample_tables, idcol = "sample_id")
   agg_fun <- switch(fun,
-    max= function(x) max(x, na.rm = TRUE),
-    sum= function(x) sum(x, na.rm = TRUE),
-    mean= function(x) mean(x, na.rm = TRUE),
-    median= function(x) stats::median(x, na.rm = TRUE)
+    max = function(x) max(x, na.rm = TRUE),# takes the largest value across samples for a bin
+    sum = function(x) sum(x, na.rm = TRUE),# adds up values across samples for a bin
+    mean = function(x) mean(x, na.rm = TRUE),# averages values across samples for a bin
+    median = function(x) stats::median(x, na.rm = TRUE) # takes the middle value across samples for a bin
   )
   # Aggregate counts across samples
   out <- combined[, .(
-    n_cpg = as.integer(round(agg_fun(n_CpGs))),
-    n_alu = as.integer(round(agg_fun(n_Alus)))), 
+    n_cpg = as.integer(round(agg_fun(n_CpGs))), # combines each sample's CpG count for this bin into one number
+    n_alu = as.integer(round(agg_fun(n_Alus)))), # same as before but with alus
     by = .(chr, bin_start, bin_end)]
-  setorder(out, chr, bin_start)
+  setorder(out, chr, bin_start)  # sorts the final table
   out[ ]
 }
