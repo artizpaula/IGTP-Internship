@@ -9,7 +9,7 @@ library(plotly)
 library(ggplot2)
 library(patchwork) # aligns the annotation strip + heatmap with independent legends
 
-data <- readRDS("/Users/paulaartizduenas/Desktop/Project/Dataset/Data Processed/data_app.rds") # Change to personal directory where data_app.rds is located
+data <- readRDS("/Users/paulaartizduenas/Desktop/Project/Dataset/Data Processed/data_app.rds")
 
 metadata <- data$metadata
 bin_table <- data$bin_table
@@ -24,7 +24,7 @@ bin_choices_by_chr <- split(bin_table$bin_id, factor(bin_table$chr, levels = chr
 
 # Human-readable "start–end" label for a bin, e.g. "1 MB-2 MB"
 format_mb_label <- function(bp) {
-  mb <- bp / 1e6
+  mb <- bp/1e6
   if (abs(mb - round(mb)) < 1e-9) paste0(round(mb)," MB")
   else paste0(format(round(mb, 1), nsmall = 1)," MB")
 }
@@ -94,7 +94,7 @@ build_bin_table_filter_inputs <- function(filters, df) {
   })
 }
 
-# Applies all configured filters to a bin_table subset.
+# Applies all configured filters to a bin_table subset
 apply_bin_table_filters <- function(df, filters, input) {
   for (f in filters) {
     threshold <- input[[paste0("binfilter_", f$id)]]
@@ -137,6 +137,7 @@ total_genome_len <- running
 chr_mid <- chr_offset + chrom_lengths / 2
 
 # Genome-wide bin table
+
 genome_wide_bins <- bin_table
 genome_wide_bins$chr <- factor(genome_wide_bins$chr, levels = chrom_list)
 genome_wide_bins <- genome_wide_bins[order(genome_wide_bins$chr, genome_wide_bins$bin_position), ]
@@ -150,6 +151,52 @@ chr_boundary_shapes <- lapply(as.numeric(chr_offset)[-1], function(x) {
   list(type = "line", x0 = x, x1 = x, y0 = 0, y1 = 1, yref = "paper",
        line = list(color = "rgba(150,150,150,0.4)", width = 1, dash = "dot"))
 })
+
+# Feature x Bin Heatmap: per-patient data preparation
+# For every patient, Substraction of Tumor-Normal considered as a "methylation shift"
+# methylation_long only has (sample_id, chr, bin_position, methylation) -- no bin_id --
+# so attach bin_id via a chr + bin_position join against bin_table first.
+bin_lookup <- bin_table[, c("chr", "bin_position", "bin_id")]
+bin_lookup$chr <- as.character(bin_lookup$chr)
+methylation_long$chr <- as.character(methylation_long$chr)
+ml_annot <- merge(methylation_long, bin_lookup, by = c("chr", "bin_position"))
+ml_annot <- merge(ml_annot, metadata[, c("sample_id", "patient_id", "Type")], by = "sample_id")
+patient_bin_type <- aggregate(methylation ~ patient_id + bin_id + chr + Type, data = ml_annot, FUN = mean, na.rm = TRUE)
+
+tumor_vals <- patient_bin_type[patient_bin_type$Type == "Tumor",  c("patient_id", "bin_id", "chr", "methylation")]
+normal_vals <- patient_bin_type[patient_bin_type$Type == "Normal", c("patient_id", "bin_id", "methylation")]
+names(tumor_vals)[4] <- "meth_tumor"
+names(normal_vals)[3] <- "meth_normal"
+patient_bin_shift <- merge(tumor_vals, normal_vals, by = c("patient_id", "bin_id"))
+patient_bin_shift$shift <- patient_bin_shift$meth_tumor - patient_bin_shift$meth_normal
+patient_bin_shift$bin_id <- factor(patient_bin_shift$bin_id, levels = bin_table$bin_id)
+
+# One row per patient with the clinical fields that can be used to annotate the heatmap
+# (Recaiguda/BRAF/KRAS/TP53/MSS/sexe/estadi2 are the same for a patient's Tumor and Normal sample)
+patient_annotation <- unique(metadata[metadata$Type == "Tumor", c(
+  "patient_id", "Recaiguda", "BRAF", "KRAS", "TP53", "MSS", "sexe", "estadi2"
+)])
+patient_annotation$patient_id <- as.character(patient_annotation$patient_id)
+patient_bin_shift$patient_id <- as.character(patient_bin_shift$patient_id)
+
+# Choices for the "which feature" selector on the heatmap tab.
+heatmap_feature_choices <- c(
+  "Methylation Values (No Association)" = "none",
+  "Relapse"  = "Recaiguda",
+  "BRAF status" = "BRAF",
+  "KRAS status" = "KRAS",
+  "TP53 status" = "TP53",
+  "MSI/MSS status"= "MSS",
+  "Sex" = "sexe",
+  "Stage" = "estadi2"
+)
+
+# Builds a patient x bin matrix of methylation shift, used only to order rows via clustering when no clinical feature is selected
+build_shift_matrix <- function(df, bin_ids) {
+  m <- tapply(df$shift, list(df$patient_id, as.character(df$bin_id)), FUN = identity)
+  keep_cols <- bin_ids[bin_ids %in% colnames(m)]
+  m[, keep_cols, drop = FALSE]
+}
 
 # Static lookup table of hg19/GRCh37 coordinates for colorectal-cancer driver genes.
 # Used only as a fallback when a searched gene isn't already annotated in bin_table$genes.
