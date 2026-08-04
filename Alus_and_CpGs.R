@@ -72,7 +72,7 @@ summarize_bins <- function(dt, bin_size = 1e6) {
   dt <- assign_bins(dt, bin_size)
   
   # counting CpGs and unique Alu elements per bin
-  out <- dt[, .(
+    out <- dt[, .(
     n_CpGs = sum(!is.na(CpG) & nzchar(CpG)), # counts every row in the bin that has a non-empty CpG entry (each row=one CpG site)
     n_Alus = uniqueN(alu_region[!is.na(alu_region) & nzchar(alu_region)]) # counts distinct alu regions in the bin, unique alu (if alu is in many rows it is only counted once)
   ), by = .(chr, bin_start, bin_end)]
