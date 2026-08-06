@@ -153,9 +153,6 @@ chr_boundary_shapes <- lapply(as.numeric(chr_offset)[-1], function(x) {
 })
 
 # Feature x Bin Heatmap: per-patient data preparation
-# For every patient, Substraction of Tumor-Normal considered as a "methylation shift"
-# methylation_long only has (sample_id, chr, bin_position, methylation) -- no bin_id --
-# so attach bin_id via a chr + bin_position join against bin_table first.
 bin_lookup <- bin_table[, c("chr", "bin_position", "bin_id")]
 bin_lookup$chr <- as.character(bin_lookup$chr)
 methylation_long$chr <- as.character(methylation_long$chr)
@@ -198,8 +195,65 @@ build_shift_matrix <- function(df, bin_ids) {
   m[, keep_cols, drop = FALSE]
 }
 
+# Reshapes a long (id, key, value) data frame into a numeric id x key matrix
+build_wide_matrix <- function(df, id_col, key_col, value_col) {
+  df <- df[is.finite(df[[value_col]]), c(id_col, key_col, value_col)]
+  if (nrow(df) == 0) return(NULL)
+  wide <- reshape(df, idvar = id_col, timevar = key_col, direction = "wide")
+  row_ids <- as.character(wide[[id_col]])
+  wide[[id_col]] <- NULL
+  names(wide) <- sub(paste0("^", value_col, "\\."), "", names(wide))
+  mat <- as.matrix(wide)
+  rownames(mat) <- row_ids
+  mat <- mat[, colSums(!is.finite(mat)) == 0, drop = FALSE]
+  mat <- mat[rowSums(!is.finite(mat)) == 0, , drop = FALSE]
+  if (nrow(mat) == 0 || ncol(mat) == 0) return(NULL)
+  mat
+}
+
+# Dynamic categorical palette, reused wherever a clinical field is mapped to colour
+categorical_palette <- function(values) {
+  base_palette <- c("#0e7c86", "#d1495b", "#3aa9c9", "#e0a339", "#2fae66", "#16324f", "#7d92a3")
+  levels_now <- sort(unique(values))
+  setNames(base_palette[((seq_along(levels_now) - 1) %% length(base_palette)) + 1], levels_now)
+}
+
+# Shared ggplot2 theme so every static plot in the app shares the same typography,
+theme_app <- function(base_size = 12) {
+  theme_minimal(base_size = base_size) +
+    theme(
+      plot.subtitle = element_text(size = rel(0.82), color = "#7d92a3", margin = margin(b = 10)),
+      plot.caption= element_text(size = rel(0.68), color = "#7d92a3", hjust = 0),
+      axis.title = element_text(size = rel(0.88), color = "#16324f"),
+      axis.text = element_text(size = rel(0.82), color = "#3a5470"),
+      legend.title= element_text(size = rel(0.85), color = "#16324f", face = "bold"),
+      legend.text= element_text(size = rel(0.82), color = "#3a5470"),
+      strip.text  = element_text(size = rel(0.88), face = "bold", color = "#16324f"),
+      strip.background = element_rect(fill = "#eef2f5", color = NA),
+      panel.grid.minor = element_blank(),
+      panel.grid.major = element_line(color = "#e3e8ec", linewidth = 0.4),
+      panel.spacing = unit(14, "pt"),
+      plot.margin = margin(10, 14, 6, 6)
+    )
+}
+
+# Orders category labels sensibly instead of plain alphabetical sort
+natural_level_order <- function(x) {
+  vals <- unique(as.character(x))
+  vals <- vals[!is.na(vals) & nzchar(vals)]
+  num <- suppressWarnings(as.numeric(vals))
+  if (length(vals) > 0 && !anyNA(num)) return(vals[order(num)])
+  roman_rank <- c("I" = 1, "II" = 2, "III" = 3, "IV" = 4, "V" = 5)
+  root <- toupper(sub("^([IVX]+).*$", "\\1", vals))
+  if (length(vals) > 0 && all(root %in% names(roman_rank))) {
+    suffix <- toupper(sub("^[IVX]+", "", vals))
+    return(vals[order(roman_rank[root], suffix)])
+  }
+  sort(vals)
+}
+
 # Static lookup table of hg19/GRCh37 coordinates for colorectal-cancer driver genes.
-# Used only as a fallback when a searched gene isn't already annotated in bin_table$genes.
+# Used only as a fallback when a searched gene isn't already annotated in bin_table$genes
 # Gene set expanded (82 genes) with https://www.intogen.org/search and UCSC Genome Browser 
 
 gene_lookup_table <- data.frame(
@@ -294,7 +348,7 @@ parse_genomic_search <- function(query, bin_table, chrom_list, gene_lookup_table
   gene_query <- toupper(q)
   has_annotation <- !is.na(bin_table$genes) &
     grepl(paste0("(^|[,;])\\s*", gene_query, "\\s*($|[,;])"), toupper(bin_table$genes))
-  in_annotation <- bin_table[has_annotation, ]
+  in_annotation <- bin_table[has_annotation,]
   if (nrow(in_annotation) >= 1) {
     return(list(status = "ok", chr = in_annotation$chr[1],
                 start = min(in_annotation$bin_start), end = max(in_annotation$bin_end),
@@ -304,19 +358,17 @@ parse_genomic_search <- function(query, bin_table, chrom_list, gene_lookup_table
   # Case 4: gene symbol not in bin_table, fall back to the static gene_lookup_table
   in_lookup <- gene_lookup_table[toupper(gene_lookup_table$gene) == gene_query, ]
   if (nrow(in_lookup) == 1) {
-    return(list(
-      status = "ok", chr = in_lookup$chr,
-      start = max(1, in_lookup$start - pad), end = in_lookup$end + pad,
-      message = paste0("Jumped to ", gene_query, " (", in_lookup$chr, ":",
-                       format(in_lookup$start, big.mark = ",", scientific = FALSE), "-",
-                       format(in_lookup$end, big.mark = ",", scientific = FALSE), ")")
+    return(list(status = "ok", chr = in_lookup$chr,
+                start = max(1, in_lookup$start-pad), end = in_lookup$end + pad,
+                message = paste0("Jumped to ", gene_query, " (", in_lookup$chr, ":",
+                                 format(in_lookup$start, big.mark = ",", scientific = FALSE), "-",
+                                 format(in_lookup$end, big.mark = ",", scientific = FALSE), ")")
     ))
   }
   list(status = "error", message = paste0("'", q, "' was not recognized as a coordinate, bin ID, or gene name."))
 }
 
-# Parses an uploaded file of bins (.csv, .tsv, .txt, or unrecognized extension) into a
-# vector of bin_id values that exist in bin_table
+# Parses an uploaded file of bins (.csv, .tsv, .txt, or unrecognized extension) into a vector of bin_id values that exist in bin_table
 
 parse_bin_file <- function(filepath, filename, bin_table, chrom_list) {
   ext <- tolower(tools::file_ext(filename))
@@ -377,10 +429,10 @@ parse_bin_file <- function(filepath, filename, bin_table, chrom_list) {
 # Zooms in and out
 zoom_view <- function(start, end, chr_len, factor, min_width = 2e6) {
   width <- end - start
-  center <- (start + end) / 2
-  new_width <- max(min_width, min(chr_len, width * factor)) # factor < 1 zooms in, > 1 zooms out
-  new_start <- center - new_width / 2
-  new_end <- center + new_width / 2
+  center <- (start + end)/2
+  new_width <- max(min_width, min(chr_len, width*factor)) # factor < 1 zooms in, > 1 zooms out
+  new_start <- center - new_width/2
+  new_end <- center + new_width/2
   if (new_start < 1) {new_end <- new_end + (1 - new_start); new_start <- 1}
   if (new_end > chr_len) {new_start <- new_start - (new_end - chr_len); new_end <- chr_len}
   new_start <- max(1, new_start)
@@ -390,22 +442,53 @@ zoom_view <- function(start, end, chr_len, factor, min_width = 2e6) {
 
 ui <- page_sidebar(
   title = div(
-    style = "display: flex; justify-content: space-between; align-items: center; width: 100%; gap: 1px; padding: 22px 5px; border-bottom: 1px solid rgba(255,255,255,0.08);",
+    style = "
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      width:100%;
+      padding:18px 10px;
+      border-bottom:1px solid rgba(255,255,255,0.10);
+    ",
+    
+    # Left side
     div(
-      style = "flex:1 1 auto; min-width:0;",
-      h2("Exploration of Epigenomic Data in Colorectal Cancer", style = "margin:0; font-weight:600; letter-spacing:0.2px; white-space:normal;")
+      h2(
+        "Exploration of Epigenomic Data in Colorectal Cancer",
+        style = "
+          margin:0;
+          font-weight:600;
+          font-size:28px;
+          line-height:1.2;
+        "
+      ),
+      
+      tags$div(
+        "Institut Germans Trias i Pujol (IGTP) · Universitat Politècnica de Catalunya (UPC)",
+        style = "
+          font-size:13px;
+          color:#9fb3c8;
+          margin-top:4px;
+        "
+      )
     ),
+    
+    # Right side
     div(
       style = "display:flex; gap:14px; align-items:center; margin-left:auto;",
+      
       div(
         style = "display:flex; align-items:center; gap:8px; border:1px solid #3a5470; border-radius:8px; padding:8px 14px;",
         bs_icon("person", size = "2em"),
-        textOutput("n_patients", inline = TRUE), " patients"
+        textOutput("n_patients", inline = TRUE),
+        " patients"
       ),
+      
       div(
         style = "display:flex; align-items:center; gap:8px; border:1px solid #3a5470; border-radius:8px; padding:8px 14px;",
         bs_icon("clipboard-data", size = "2em"),
-        textOutput("n_samples", inline = TRUE), " samples"
+        textOutput("n_samples", inline = TRUE),
+        " samples"
       )
     )
   ),
@@ -429,14 +512,13 @@ ui <- page_sidebar(
     actionButton("clear_bins", "Clear bin selection", icon = bs_icon("x-circle"), class = "btn-sm class=btn-outline-light w-100"),
     fileInput("bins_file", "Or upload bins to select:", accept = c(".csv", ".tsv", ".txt", "text/csv", "text/tab-separated-values", "text/plain"), placeholder = "No file selected", buttonLabel = "Browse..."),
     tags$div("Accepts .csv/.tsv/.txt or a plain list of bin IDs like 1_1000000, one per line or comma-separated).", style = "font-size:11px; color:#7d92a3; margin-top:-10px; margin-bottom:8px;"),
-    hr(style = "margin:1px 0; border-color:#3a5470;")
-    ),
+    hr(style = "margin:1px 0; border-color:#3a5470;")),
   
   navset_card_underline(
     title = "Exploration and Visualization",
     
     # 1. Overview
-    nav_panel("Overview", layout_columns(col_widths = c(4, 4, 4), card(card_header("Tumor vs Normal Methylation"), plotOutput("overview_boxplot", height = "260px"), height = "310px"), card(card_header("Mutation status (KRAS / BRAF / TP53)"), plotOutput("overview_mutations", height = "260px"), height = "310px"), card(card_header("Sex / Stage / MSS composition"), plotOutput("overview_composition", height = "260px"), height = "310px"))),
+    nav_panel("Overview", layout_columns(col_widths = c(6, 6), row_heights = c("425px"), card(card_header("Tumor vs. Normal Methylation"), plotOutput("overview_boxplot", height = "300px"), height = "350px"), card(card_header("Mutation Status vs. Methylation Shift"), plotOutput("overview_mutations", height = "300px"), height = "350px"), card(card_header("Stage & MSI/MSS vs. Methylation Shift"), plotOutput("overview_composition", height = "300px"), height = "350px"), card(card_header("Sex Distribution"), plotOutput("overview_sex_comparison", height = "300px"), height = "350px"))),
     
     # 2. Genome Browser
     nav_panel("Genome Browser", div(style = "font-size:13px; color:#6c757d; margin-bottom:10px;", "Browse methylation across the whole genome: pick a chromosome, zoom in/out, or search by coordinates, bin ID, or gene name."), card(card_header("All chromosomes, click a point to jump to that chromosome"), plotlyOutput("genome_overview_plot", height = "420px")), card(card_header(textOutput("browser_position_header", inline = TRUE)), div(style = "display:flex; flex-wrap:wrap; gap:0px; align-items:center", div(style = "display:flex; gap:6px; align-items:center; flex:1 1 320px; min-width:280px;", textInput("browser_search", label = NULL, placeholder = "e.g. 12:25000000-26000000, 12_25000000, or KRAS", width = "100%"), actionButton("browser_search_go", NULL, icon = bs_icon("search"), class = "btn-sm btn-outline-secondary")), div(style = "display:flex; gap:4px; align-items:center;", actionButton("prev_chr", NULL, icon = bs_icon("chevron-left"), class = "btn-sm btn-outline-secondary"), selectInput("browser_chr", NULL, choices = chrom_list, selected = "1", width = "90px"), actionButton("next_chr", NULL, icon = bs_icon("chevron-right"), class = "btn-sm btn-outline-secondary")), div(style = "display:flex; gap:4px;", actionButton("zoom_in", NULL, icon = bs_icon("zoom-in"), class = "btn-sm btn-outline-secondary"), actionButton("zoom_out", NULL, icon = bs_icon("zoom-out"), class = "btn-sm btn-outline-secondary"), actionButton("zoom_reset", "Whole chromosome", icon = bs_icon("arrow-counterclockwise"), class = "btn-sm btn-outline-secondary"))), plotlyOutput("browser_chr_plot", height = "560px"), tags$div("Tip: bins currently in your sidebar selection are outlined on the plot above. You can also drag directly on the plot to zoom, and double-click it to reset.", style = "font-size:11px; color:#7d92a3; margin-top:6px;"))),
@@ -448,7 +530,9 @@ ui <- page_sidebar(
     nav_panel("Genome-wide Profile", card(card_header("Manhattan-style plot: Tumor - Normal methylation difference"), plotlyOutput("manhattan_plot", height = "550px"))),
     
     # 5. Feature x Chromosome Heatmap
-    nav_panel("Feature × Chromosome Heatmap", card(card_header("Diverging heatmap of selected features from metadata"), plotOutput("feature_heatmap", height = "600px"))),
+    nav_panel("Feature × Chromosome Heatmap", card(card_header("Diverging heatmap of methylation shift (feature × chromosome)"), div(style = "font-size:13px; color:#6c757d; margin-bottom:10px;", "Each row is a patient, each column a chromosome, and the colour is the Tumor \u2212 Normal methylation shift for that patient/chromosome. Select a feature below to add a colour strip showing that clinical variable alongside the heatmap."),
+                                                   div(style = "max-width:500px; margin-bottom:10px;", selectInput("heatmap_feature", "Select Feature:", choices = heatmap_feature_choices, selected = "none")),
+                                                   plotOutput("feature_heatmap", height = "1100px"))),
     
     # 6. Clinical Explorer
     nav_panel("Clinical Explorer", layout_columns(col_widths = c(5, 7), card(card_header("Methylation by mutation status"), selectInput("mutation_gene", "Gene:", choices = c("KRAS", "BRAF", "TP53")), plotOutput("clinical_boxplot")), card(card_header("Clinical metadata table"), DTOutput("clinical_table")))),
@@ -486,15 +570,14 @@ ui <- page_sidebar(
     )
   ),
   
-  div(style = "display:flex; align-items:center; justify-content:center; gap:18px; margin-top:24px; padding:16px 0; border-top:1px solid #dde3e8; color:#6c757d; font-size:13px;", tags$span("Paula Artiz Dueñas, Institut Germans Trias i Pujol (IGTP) - Universitat Politècnica de Catalunya (UPC)", style = "margin-left:10px;"))
+  div(style = "display:flex; align-items:center; justify-content:center; gap:18px; margin-top:24px; padding:16px 0; border-top:1px solid #dde3e8; color:#6c757d; font-size:13px;", tags$span("Paula Artiz Dueñas, Bioinformatics Student", style = "margin-left:10px;"))
 )
 
 # Server Definition
 
 server <- function(input, output, session) {
   
-  updateSelectizeInput(session, "bins", choices = bin_table$bin_id, server = TRUE)
-  
+  updateSelectizeInput(session, "bins", choices = bin_table$bin_id,selected = character(0), server = TRUE)  
   observeEvent(input$add_chr_bins, {
     chr_bins <- bin_choices_by_chr[[input$chr]]
     updated <- union(input$bins, chr_bins)
@@ -533,16 +616,149 @@ server <- function(input, output, session) {
   
   # 1. Overview
   
+  overview_ml_selected <- reactive({
+    df <- methylation_long
+    if ("bin_id" %in% names(df)) {
+      df <- df[df$bin_id %in% selected_bins(), ]
+    } else {
+      df <- df[df$chr %in% unique(selected_bin_table()$chr), ]
+    }
+    merge(df, metadata[, c("sample_id", "patient_id", "Type", "sexe")], by = "sample_id")
+  })
+  
+  # One row per patient: mean methylation (Tumor/Normal) and the Tumor-Normal shift
+  overview_patient_shift <- reactive({
+    df <- overview_ml_selected()
+    req(nrow(df) > 0)
+    agg <- aggregate(methylation ~ patient_id + Type, data = df, FUN = mean, na.rm = TRUE)
+    wide <- reshape(agg, idvar = "patient_id", timevar = "Type", direction = "wide")
+    names(wide) <- sub("^methylation\\.", "", names(wide))
+    wide$shift <- wide$Tumor - wide$Normal
+    merge(wide, patient_annotation, by = "patient_id")
+  })
+  
+  # Small label reused on every Overview plot so it's clear which region is shown
+  region_label <- reactive({
+    df <- selected_bin_table()
+    paste0(nrow(df), " bin(s) - chr", paste(unique(df$chr), collapse = ", "))
+  })
+  
+  
   output$overview_sex_comparison <- renderPlot({
+    # Counted at the patient level (via overview_patient_shift), not per bin-row
+    df <- overview_patient_shift()
+    validate(need(!is.null(df) && nrow(df) > 0, "No data available for the current selection."))
+    
+    sex_labels <- c("Dona" = "Female", "Home" = "Male")
+    sex_vals <- sex_labels[as.character(df$sexe)]
+    sex_vals[is.na(sex_vals)] <- "Unknown"
+    sex_counts <- as.data.frame(table(Sex = sex_vals))
+    sex_counts <- sex_counts[sex_counts$Freq > 0, ]
+    names(sex_counts)[2] <- "Count"
+    validate(need(nrow(sex_counts) > 0, "No sex information available for the current selection."))
+    sex_counts$Pct <- sex_counts$Count / sum(sex_counts$Count)
+    sex_counts$Label <- paste0(sex_counts$Sex, "\n", round(100 * sex_counts$Pct), "%")
+    
+    ggplot(sex_counts, aes(x = 2, y = Count, fill = Sex)) +
+      geom_col(width = 1, color = "white", linewidth = 1.2) +
+      geom_text(aes(label = Label), position = position_stack(vjust = 0.5),
+                size = 3.4, color = "white", fontface = "bold", lineheight = 0.9) +
+      coord_polar(theta = "y") +
+      xlim(0.2, 2.5) +
+      scale_fill_manual(values = c("Female" = "#d1495b", "Male" = "#3aa9c9", "Unknown" = "#b7c1c9")) +
+      labs(fill = NULL, subtitle = paste0(nrow(df), " patient(s) \u2013 ", region_label())) +
+      theme_void(base_size = 12) +
+      theme(
+        legend.position = "bottom",
+        plot.subtitle = element_text(size = rel(0.78), color = "#7d92a3", hjust = 0.5)
+      )
   })
   
   output$overview_boxplot <- renderPlot({
+    df <- selected_bin_table()
+    validate(need(nrow(df) > 0, "No bins selected. Choose a chromosome or bins in the sidebar."))
+    plot_df <- data.frame(
+      Type = rep(c("Normal", "Tumor"), each = nrow(df)),
+      Methylation = c(df$mean_methylation_normal, df$mean_methylation_tumor)
+    )
+    plot_df <- plot_df[is.finite(plot_df$Methylation), ]
+    validate(need(nrow(plot_df) > 0, "No valid methylation values for the current selection."))
+    plot_df$Type <- factor(plot_df$Type, levels = c("Normal", "Tumor"))
+    
+    ggplot(plot_df, aes(x = Type, y = Methylation, fill = Type)) +
+      geom_jitter(width = 0.07, size = 0.9, alpha = 0.25, color = "#16324f") +
+      geom_boxplot(width = 0.45, outlier.shape = NA, alpha = 0.92, color = "#16324f", linewidth = 0.4) +
+      stat_summary(fun = mean, geom = "point", shape = 23, size = 2.4,
+                   fill = "white", color = "#16324f", stroke = 0.8) +
+      scale_fill_manual(values = c("Tumor" = "#d1495b", "Normal" = "#3aa9c9")) +
+      scale_y_continuous(limits = c(0, 1), expand = expansion(mult = c(0.02, 0.06))) +
+      labs(x = NULL, y = "Mean methylation (per bin)", subtitle = region_label(),
+           caption = "\u25c7 mean") +
+      theme_app() +
+      theme(legend.position = "none")
   })
   
   output$overview_mutations <- renderPlot({
+    df <- overview_patient_shift()
+    genes <- c("KRAS", "BRAF", "TP53")
+    long_df <- do.call(rbind, lapply(genes, function(g) {
+      data.frame(Gene = g, Status = as.character(df[[g]]), Shift = df$shift, stringsAsFactors = FALSE)
+    }))
+    long_df <- long_df[!is.na(long_df$Status) & is.finite(long_df$Shift), ]
+    validate(need(nrow(long_df) > 0, "No mutation status data available for the current selection."))
+    
+    # Convention used for the KRAS/BRAF/TP53 fields: 0 = wild-type, 1 = mutant
+    status_labels <- c("0" = "Wild-type", "1" = "Mutant")
+    long_df$Status <- factor(
+      ifelse(long_df$Status %in% names(status_labels), status_labels[long_df$Status], "Unknown"),
+      levels = c("Wild-type", "Mutant", "Unknown")
+    )
+    n_by_gene <- table(long_df$Gene)
+    long_df$GeneLabel <- factor(
+      paste0(long_df$Gene, " (n=", n_by_gene[long_df$Gene], ")"),
+      levels = paste0(genes, " (n=", n_by_gene[genes], ")")
+    )
+    
+    ggplot(long_df, aes(x = Status, y = Shift, fill = Status)) +
+      geom_hline(yintercept = 0, color = "#7d92a3", linewidth = 0.4, linetype = "dashed") +
+      geom_jitter(width = 0.1, size = 0.9, alpha = 0.3, color = "#16324f") +
+      geom_boxplot(width = 0.5, outlier.shape = NA, alpha = 0.92, color = "#16324f", linewidth = 0.4) +
+      scale_fill_manual(values = c("Wild-type" = "#3aa9c9", "Mutant" = "#d1495b", "Unknown" = "darkgray")) +
+      facet_wrap(~ GeneLabel, nrow = 1, scales = "free_x") +
+      labs(x = NULL, y = "Methylation shift (Tumor \u2212 Normal)", subtitle = region_label()) +
+      theme_app() +
+      theme(legend.position = "none", axis.text.x = element_text(angle = 20, hjust = 1))
   })
   
   output$overview_composition <- renderPlot({
+    df <- overview_patient_shift()
+    feats <- c("estadi2", "MSS")
+    long_df <- do.call(rbind, lapply(feats, function(f) {
+      data.frame(Feature = f, Level = as.character(df[[f]]), Shift = df$shift, stringsAsFactors = FALSE)
+    }))
+    long_df <- long_df[!is.na(long_df$Level) & is.finite(long_df$Shift), ]
+    validate(need(nrow(long_df) > 0, "No stage/MSS data available for the current selection."))
+    
+    agg <- aggregate(Shift ~ Feature + Level, data = long_df, FUN = mean)
+    n_df <- aggregate(Shift ~ Feature + Level, data = long_df, FUN = length)
+    names(n_df)[3] <- "n"
+    agg <- merge(agg, n_df, by = c("Feature", "Level"))
+    
+    # Reuse the friendly names already defined for the heatmap feature selector
+    feature_display <- setNames(names(heatmap_feature_choices), heatmap_feature_choices)
+    agg$FeatureLabel <- factor(feature_display[agg$Feature], levels = feature_display[feats])
+    agg$Level <- factor(agg$Level, levels = natural_level_order(agg$Level))
+    
+    ggplot(agg, aes(x = Level, y = Shift, fill = Feature)) +
+      geom_hline(yintercept = 0, color = "#7d92a3", linewidth = 0.4) +
+      geom_col(width = 0.6, show.legend = FALSE) +
+      geom_text(aes(y = Shift, label = paste0("n=", n), vjust = ifelse(Shift >= 0, -0.5, 1.3)),
+                size = 2.7, color = "#16324f") +
+      scale_fill_manual(values = c("estadi2" = "#d1495b", "MSS" = "#3aa9c9")) +
+      scale_y_continuous(expand = expansion(mult = c(0.15, 0.18))) +
+      facet_wrap(~ FeatureLabel, scales = "free_x", nrow = 1) +
+      labs(x = NULL, y = "Mean methylation shift (Tumor \u2212 Normal)", subtitle = region_label()) +
+      theme_app()
   })
   
   # 2. Genome Browser
@@ -679,22 +895,213 @@ server <- function(input, output, session) {
   })
   
   # 3. Tumor vs. Normal
+  
+  # Sample x bin matrix of raw methylation for the currently selected bins, used by PCA/UMAP.
+  projection_matrix <- reactive({
+    bins_now <- selected_bins()
+    req(length(bins_now) > 0)
+    df <- ml_annot[ml_annot$bin_id %in% bins_now, c("sample_id", "bin_id", "methylation")]
+    mat <- build_wide_matrix(df, "sample_id", "bin_id", "methylation")
+    req_ok <- !is.null(mat) && ncol(mat) >= 2
+    if (!req_ok) return(NULL)
+    keep_cols <- apply(mat, 2, function(x) stats::sd(x) > 0)
+    mat <- mat[, keep_cols, drop = FALSE]
+    if (nrow(mat) < 3 || ncol(mat) < 2) return(NULL)
+    mat
+  })
+  
+  # Patient x bin matrix of methylation shift (Tumor - Normal) for the selected bins, used by the network plot
+  patient_shift_matrix <- reactive({
+    bins_now <- selected_bins()
+    req(length(bins_now) > 0)
+    df <- patient_bin_shift[patient_bin_shift$bin_id %in% bins_now, c("patient_id", "bin_id", "shift")]
+    mat <- build_wide_matrix(df, "patient_id", "bin_id", "shift")
+    if (is.null(mat) || nrow(mat) < 3 || ncol(mat) < 2) return(NULL)
+    mat
+  })
+  
   output$tn_density <- renderPlot({
+    df <- selected_bin_table()
+    validate(need(nrow(df) > 0, "No bins selected. Choose a chromosome or bins in the sidebar."))
+    plot_df <- data.frame(
+      Type = rep(c("Tumor", "Normal"), each = nrow(df)),
+      Methylation = c(df$mean_methylation_tumor, df$mean_methylation_normal)
+    )
+    plot_df <- plot_df[is.finite(plot_df$Methylation), ]
+    validate(need(nrow(plot_df) > 0, "No valid methylation values for the current selection."))
+    
+    ggplot(plot_df, aes(x = Methylation, fill = Type, color = Type)) +
+      geom_density(alpha = 0.35, linewidth = 0.9, na.rm = TRUE) +
+      scale_fill_manual(values = c("Tumor" = "#d1495b", "Normal" = "#3aa9c9")) +
+      scale_color_manual(values = c("Tumor" = "#d1495b", "Normal" = "#3aa9c9")) +
+      labs(x = "Mean methylation (per bin)", y = "Density", title = region_label(), fill = NULL, color = NULL) +
+      theme_minimal(base_size = 12) +
+      theme(legend.position = "top")
   })
   
   output$tn_projection <- renderPlotly({
+    method <- input$proj_method
+    if (is.null(method)) method <- "PCA"
+    mat <- projection_matrix()
+    validate(need(!is.null(mat),
+                  "Not enough samples with complete data for the selected bins to compute a projection. Try selecting more bins."))
+    
+    if (identical(method, "PCA")) {
+      pca <- prcomp(mat, center = TRUE, scale. = TRUE)
+      coords <- as.data.frame(pca$x[, 1:2])
+      names(coords) <- c("Dim1", "Dim2")
+      var_exp <- round(100 * summary(pca)$importance[2, 1:2], 1)
+      xlab <- paste0("PC1 (", var_exp[1], "%)")
+      ylab <- paste0("PC2 (", var_exp[2], "%)")
+    } else {
+      validate(need(requireNamespace("uwot", quietly = TRUE),
+                    "UMAP requires the 'uwot' package, which isn't installed. Install it with install.packages('uwot'), or switch to PCA."))
+      set.seed(42)
+      n_neighbors <- max(2, min(15, nrow(mat) - 1))
+      um <- uwot::umap(mat, n_neighbors = n_neighbors, n_components = 2)
+      coords <- as.data.frame(um)
+      names(coords) <- c("Dim1", "Dim2")
+      xlab <- "UMAP 1"
+      ylab <- "UMAP 2"
+    }
+    
+    coords$sample_id <- rownames(mat)
+    coords <- merge(coords, metadata[, c("sample_id", "patient_id", "Type", "sexe")], by = "sample_id")
+    
+    plot_ly(
+      coords, x = ~Dim1, y = ~Dim2, color = ~Type,
+      colors = c("Tumor" = "#d1495b", "Normal" = "#3aa9c9"),
+      type = "scatter", mode = "markers",
+      marker = list(size = 10, line = list(color = "#0b2436", width = 1)),
+      text = ~paste0("Sample: ", sample_id, "<br>Patient: ", patient_id, "<br>Type: ", Type),
+      hoverinfo = "text"
+    ) |>
+      layout(
+        xaxis = list(title = xlab), yaxis = list(title = ylab),
+        legend = list(orientation = "h", x = 0, y = 1.08)
+      )
   })
   
   output$tn_network <- renderPlot({
+    mat <- patient_shift_matrix()
+    validate(need(!is.null(mat),
+                  "Not enough overlapping data across patients for the selected bins to build a similarity network. Try selecting more bins."))
+    
+    cor_mat <- stats::cor(t(mat))
+    layout_xy <- tryCatch(stats::cmdscale(stats::as.dist(1 - cor_mat), k = 2), error = function(e) NULL)
+    validate(need(!is.null(layout_xy), "Couldn't compute a layout for the current selection."))
+    
+    nodes <- data.frame(patient_id = rownames(mat), x = layout_xy[, 1], y = layout_xy[, 2], stringsAsFactors = FALSE)
+    nodes <- merge(nodes, patient_annotation, by = "patient_id", all.x = TRUE)
+    nodes$mss_label <- as.character(nodes$MSS)
+    nodes$mss_label[is.na(nodes$mss_label)] <- "unknown"
+    mss_palette <- categorical_palette(nodes$mss_label)
+    
+    # Draw an edge between the most similar pairs of patients only (top 15% by correlation), to keep the plot readable
+    ids <- rownames(mat)
+    edge_df <- NULL
+    if (length(ids) >= 2) {
+      pairs <- utils::combn(ids, 2)
+      edge_df <- data.frame(
+        from = pairs[1, ], to = pairs[2, ],
+        corr = cor_mat[cbind(pairs[1, ], pairs[2, ])],
+        stringsAsFactors = FALSE
+      )
+      edge_df <- edge_df[is.finite(edge_df$corr), ]
+      thresh <- stats::quantile(edge_df$corr, 0.85, na.rm = TRUE)
+      edge_df <- edge_df[edge_df$corr >= thresh, ]
+      edge_df <- merge(edge_df, setNames(nodes[, c("patient_id", "x", "y")], c("from", "x_from", "y_from")), by = "from")
+      edge_df <- merge(edge_df, setNames(nodes[, c("patient_id", "x", "y")], c("to", "x_to", "y_to")), by = "to")
+    }
+    
+    p <- ggplot()
+    if (!is.null(edge_df) && nrow(edge_df) > 0) {
+      p <- p + geom_segment(
+        data = edge_df, aes(x = x_from, y = y_from, xend = x_to, yend = y_to, alpha = corr),
+        color = "#7d92a3", linewidth = 0.4, show.legend = FALSE)
+    }
+    p +
+      geom_point(data = nodes, aes(x = x, y = y, fill = mss_label), shape = 21, size = 6, color = "#0b2436", stroke = 0.6) +
+      geom_text(data = nodes, aes(x = x, y = y, label = patient_id), vjust = -1.4, size = 3, color = "#16324f") +
+      scale_fill_manual(values = mss_palette, name = "MSS status") +
+      labs(
+        x = "Dimension 1", y = "Dimension 2",
+        title = "Patient similarity network (methylation-shift correlation)",
+        subtitle = region_label()
+      ) +
+      theme_minimal(base_size = 12) +
+      theme(legend.position = "bottom", panel.grid.minor = element_blank())
   })
   
   # 4. Genome-wide Profile
   output$manhattan_plot <- renderPlotly({
+    
   })
   
   # 5. Feature × Chromosome Heatmap
   output$feature_heatmap <- renderPlot({
+    feature <- input$heatmap_feature
+    if (is.null(feature)) feature <- "none"
     
+    bins_now <- selected_bins()
+    validate(need(length(bins_now) > 0, "Select at least one bin in the sidebar."))
+    
+    # Restrict to the bins currently selected in the sidebar, kept in genome order
+    ord_bins <- bin_table$bin_id[bin_table$bin_id %in% bins_now]
+    shift_df <- patient_bin_shift[patient_bin_shift$bin_id %in% bins_now, ]
+    shift_df$bin_id <- factor(shift_df$bin_id, levels = ord_bins)
+    validate(need(nrow(shift_df) > 0, "No methylation shift data for the selected bins."))
+    max_abs  <- max(abs(shift_df$shift), na.rm = TRUE)
+    
+    # Row order: cluster by shift pattern if no feature chosen, otherwise group by the feature value
+    if (identical(feature, "none")) {mat <- build_shift_matrix(shift_df, ord_bins)
+    mat[is.na(mat)] <- 0
+    ord <- if (nrow(mat) > 1) rownames(mat)[hclust(dist(mat))$order] else rownames(mat)}
+    else {
+      ann_ord <- patient_annotation[order(patient_annotation[[feature]], as.numeric(patient_annotation$patient_id)), ]
+      ord <- ann_ord$patient_id}
+    
+    shift_df$patient_id <- factor(shift_df$patient_id, levels = ord)
+    
+    p_main <- ggplot(shift_df, aes(x = bin_id, y = patient_id, fill = shift)) +
+      geom_tile(color = "white", linewidth = 0.15) +
+      scale_fill_gradient2(
+        low = "#3aa9c9", mid = "white", high = "#d1495b", midpoint = 0,
+        limits = c(-max_abs, max_abs), name = "Methylation\nshift\n(Tumor \u2212 Normal)") +
+      scale_y_discrete(limits = rev(ord)) +
+      labs(x = "Bin", y = "Patient") +
+      theme_minimal(base_size = 12) +
+      theme(
+        panel.grid = element_blank(),
+        axis.text.y = element_text(size = 6),
+        axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 6))
+    
+    if (identical(feature, "none")) {
+      return(p_main)
+    }
+    
+    # Colour strip for the chosen clinical feature, row-aligned with the main heatmap
+    ann_df <- patient_annotation
+    ann_df$patient_id <- factor(ann_df$patient_id, levels = ord)
+    ann_df$x <- "Feature"
+    ann_df$value <- as.character(ann_df[[feature]])
+    ann_df$value[is.na(ann_df$value)] <- "unknown"
+    
+    levels_cat <- sort(unique(ann_df$value))
+    base_palette <- c("#0e7c86", "#d1495b", "#3aa9c9", "#e0a339", "#2fae66", "#16324f", "#7d92a3")
+    pal <- setNames(base_palette[seq_along(levels_cat)], levels_cat)
+    
+    feature_label <- names(heatmap_feature_choices)[heatmap_feature_choices == feature]
+    
+    p_ann <- ggplot(ann_df, aes(x = x, y = patient_id, fill = value)) +
+      geom_tile(color = "white", linewidth = 0.15) +
+      scale_fill_manual(values = pal, name = feature_label) +
+      scale_y_discrete(limits = rev(ord)) +
+      labs(x = NULL, y = NULL) +
+      theme_minimal(base_size = 12) +
+      theme(axis.text.y = element_blank(), panel.grid = element_blank())
+    
+    p_ann + p_main + plot_layout(widths = c(1, 20)) # plot_layout() from patchwork package
   })
   
   # 6. Clinical Explorer
@@ -702,6 +1109,7 @@ server <- function(input, output, session) {
   })
   
   output$clinical_table <- renderDT({
+    
   })
   
   # 7. Bin Table
@@ -714,7 +1122,7 @@ server <- function(input, output, session) {
   })
   
   output$bintable_download <- downloadHandler(
-    filename = function() { "bintable.csv" },
+    filename = function() {"bintable.csv"},
     content = function(file) {
       write.csv(build_display_bin_table(filtered_bin_table()), file, row.names = FALSE)
     }
