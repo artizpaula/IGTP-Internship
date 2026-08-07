@@ -617,149 +617,24 @@ server <- function(input, output, session) {
   # 1. Overview
   
   overview_ml_selected <- reactive({
-    df <- methylation_long
-    if ("bin_id" %in% names(df)) {
-      df <- df[df$bin_id %in% selected_bins(), ]
-    } else {
-      df <- df[df$chr %in% unique(selected_bin_table()$chr), ]
-    }
-    merge(df, metadata[, c("sample_id", "patient_id", "Type", "sexe")], by = "sample_id")
-  })
+})
   
   # One row per patient: mean methylation (Tumor/Normal) and the Tumor-Normal shift
   overview_patient_shift <- reactive({
-    df <- overview_ml_selected()
-    req(nrow(df) > 0)
-    agg <- aggregate(methylation ~ patient_id + Type, data = df, FUN = mean, na.rm = TRUE)
-    wide <- reshape(agg, idvar = "patient_id", timevar = "Type", direction = "wide")
-    names(wide) <- sub("^methylation\\.", "", names(wide))
-    wide$shift <- wide$Tumor - wide$Normal
-    merge(wide, patient_annotation, by = "patient_id")
-  })
-  
-  # Small label reused on every Overview plot so it's clear which region is shown
-  region_label <- reactive({
-    df <- selected_bin_table()
-    paste0(nrow(df), " bin(s) - chr", paste(unique(df$chr), collapse = ", "))
-  })
+})
   
   
   output$overview_sex_comparison <- renderPlot({
-    # Counted at the patient level (via overview_patient_shift), not per bin-row
-    df <- overview_patient_shift()
-    validate(need(!is.null(df) && nrow(df) > 0, "No data available for the current selection."))
-    
-    sex_labels <- c("Dona" = "Female", "Home" = "Male")
-    sex_vals <- sex_labels[as.character(df$sexe)]
-    sex_vals[is.na(sex_vals)] <- "Unknown"
-    sex_counts <- as.data.frame(table(Sex = sex_vals))
-    sex_counts <- sex_counts[sex_counts$Freq > 0, ]
-    names(sex_counts)[2] <- "Count"
-    validate(need(nrow(sex_counts) > 0, "No sex information available for the current selection."))
-    sex_counts$Pct <- sex_counts$Count / sum(sex_counts$Count)
-    sex_counts$Label <- paste0(sex_counts$Sex, "\n", round(100 * sex_counts$Pct), "%")
-    
-    ggplot(sex_counts, aes(x = 2, y = Count, fill = Sex)) +
-      geom_col(width = 1, color = "white", linewidth = 1.2) +
-      geom_text(aes(label = Label), position = position_stack(vjust = 0.5),
-                size = 3.4, color = "white", fontface = "bold", lineheight = 0.9) +
-      coord_polar(theta = "y") +
-      xlim(0.2, 2.5) +
-      scale_fill_manual(values = c("Female" = "#d1495b", "Male" = "#3aa9c9", "Unknown" = "#b7c1c9")) +
-      labs(fill = NULL, subtitle = paste0(nrow(df), " patient(s) \u2013 ", region_label())) +
-      theme_void(base_size = 12) +
-      theme(
-        legend.position = "bottom",
-        plot.subtitle = element_text(size = rel(0.78), color = "#7d92a3", hjust = 0.5)
-      )
-  })
+})
   
   output$overview_boxplot <- renderPlot({
-    df <- selected_bin_table()
-    validate(need(nrow(df) > 0, "No bins selected. Choose a chromosome or bins in the sidebar."))
-    plot_df <- data.frame(
-      Type = rep(c("Normal", "Tumor"), each = nrow(df)),
-      Methylation = c(df$mean_methylation_normal, df$mean_methylation_tumor)
-    )
-    plot_df <- plot_df[is.finite(plot_df$Methylation), ]
-    validate(need(nrow(plot_df) > 0, "No valid methylation values for the current selection."))
-    plot_df$Type <- factor(plot_df$Type, levels = c("Normal", "Tumor"))
-    
-    ggplot(plot_df, aes(x = Type, y = Methylation, fill = Type)) +
-      geom_jitter(width = 0.07, size = 0.9, alpha = 0.25, color = "#16324f") +
-      geom_boxplot(width = 0.45, outlier.shape = NA, alpha = 0.92, color = "#16324f", linewidth = 0.4) +
-      stat_summary(fun = mean, geom = "point", shape = 23, size = 2.4,
-                   fill = "white", color = "#16324f", stroke = 0.8) +
-      scale_fill_manual(values = c("Tumor" = "#d1495b", "Normal" = "#3aa9c9")) +
-      scale_y_continuous(limits = c(0, 1), expand = expansion(mult = c(0.02, 0.06))) +
-      labs(x = NULL, y = "Mean methylation (per bin)", subtitle = region_label(),
-           caption = "\u25c7 mean") +
-      theme_app() +
-      theme(legend.position = "none")
-  })
+})
   
   output$overview_mutations <- renderPlot({
-    df <- overview_patient_shift()
-    genes <- c("KRAS", "BRAF", "TP53")
-    long_df <- do.call(rbind, lapply(genes, function(g) {
-      data.frame(Gene = g, Status = as.character(df[[g]]), Shift = df$shift, stringsAsFactors = FALSE)
-    }))
-    long_df <- long_df[!is.na(long_df$Status) & is.finite(long_df$Shift), ]
-    validate(need(nrow(long_df) > 0, "No mutation status data available for the current selection."))
-    
-    # Convention used for the KRAS/BRAF/TP53 fields: 0 = wild-type, 1 = mutant
-    status_labels <- c("0" = "Wild-type", "1" = "Mutant")
-    long_df$Status <- factor(
-      ifelse(long_df$Status %in% names(status_labels), status_labels[long_df$Status], "Unknown"),
-      levels = c("Wild-type", "Mutant", "Unknown")
-    )
-    n_by_gene <- table(long_df$Gene)
-    long_df$GeneLabel <- factor(
-      paste0(long_df$Gene, " (n=", n_by_gene[long_df$Gene], ")"),
-      levels = paste0(genes, " (n=", n_by_gene[genes], ")")
-    )
-    
-    ggplot(long_df, aes(x = Status, y = Shift, fill = Status)) +
-      geom_hline(yintercept = 0, color = "#7d92a3", linewidth = 0.4, linetype = "dashed") +
-      geom_jitter(width = 0.1, size = 0.9, alpha = 0.3, color = "#16324f") +
-      geom_boxplot(width = 0.5, outlier.shape = NA, alpha = 0.92, color = "#16324f", linewidth = 0.4) +
-      scale_fill_manual(values = c("Wild-type" = "#3aa9c9", "Mutant" = "#d1495b", "Unknown" = "darkgray")) +
-      facet_wrap(~ GeneLabel, nrow = 1, scales = "free_x") +
-      labs(x = NULL, y = "Methylation shift (Tumor \u2212 Normal)", subtitle = region_label()) +
-      theme_app() +
-      theme(legend.position = "none", axis.text.x = element_text(angle = 20, hjust = 1))
-  })
+})
   
   output$overview_composition <- renderPlot({
-    df <- overview_patient_shift()
-    feats <- c("estadi2", "MSS")
-    long_df <- do.call(rbind, lapply(feats, function(f) {
-      data.frame(Feature = f, Level = as.character(df[[f]]), Shift = df$shift, stringsAsFactors = FALSE)
-    }))
-    long_df <- long_df[!is.na(long_df$Level) & is.finite(long_df$Shift), ]
-    validate(need(nrow(long_df) > 0, "No stage/MSS data available for the current selection."))
-    
-    agg <- aggregate(Shift ~ Feature + Level, data = long_df, FUN = mean)
-    n_df <- aggregate(Shift ~ Feature + Level, data = long_df, FUN = length)
-    names(n_df)[3] <- "n"
-    agg <- merge(agg, n_df, by = c("Feature", "Level"))
-    
-    # Reuse the friendly names already defined for the heatmap feature selector
-    feature_display <- setNames(names(heatmap_feature_choices), heatmap_feature_choices)
-    agg$FeatureLabel <- factor(feature_display[agg$Feature], levels = feature_display[feats])
-    agg$Level <- factor(agg$Level, levels = natural_level_order(agg$Level))
-    
-    ggplot(agg, aes(x = Level, y = Shift, fill = Feature)) +
-      geom_hline(yintercept = 0, color = "#7d92a3", linewidth = 0.4) +
-      geom_col(width = 0.6, show.legend = FALSE) +
-      geom_text(aes(y = Shift, label = paste0("n=", n), vjust = ifelse(Shift >= 0, -0.5, 1.3)),
-                size = 2.7, color = "#16324f") +
-      scale_fill_manual(values = c("estadi2" = "#d1495b", "MSS" = "#3aa9c9")) +
-      scale_y_continuous(expand = expansion(mult = c(0.15, 0.18))) +
-      facet_wrap(~ FeatureLabel, scales = "free_x", nrow = 1) +
-      labs(x = NULL, y = "Mean methylation shift (Tumor \u2212 Normal)", subtitle = region_label()) +
-      theme_app()
-  })
+})
   
   # 2. Genome Browser
   nav <- reactiveValues(chr = NULL, start = NULL, end = NULL)
@@ -898,140 +773,20 @@ server <- function(input, output, session) {
   
   # Sample x bin matrix of raw methylation for the currently selected bins, used by PCA/UMAP.
   projection_matrix <- reactive({
-    bins_now <- selected_bins()
-    req(length(bins_now) > 0)
-    df <- ml_annot[ml_annot$bin_id %in% bins_now, c("sample_id", "bin_id", "methylation")]
-    mat <- build_wide_matrix(df, "sample_id", "bin_id", "methylation")
-    req_ok <- !is.null(mat) && ncol(mat) >= 2
-    if (!req_ok) return(NULL)
-    keep_cols <- apply(mat, 2, function(x) stats::sd(x) > 0)
-    mat <- mat[, keep_cols, drop = FALSE]
-    if (nrow(mat) < 3 || ncol(mat) < 2) return(NULL)
-    mat
-  })
+    })
   
   # Patient x bin matrix of methylation shift (Tumor - Normal) for the selected bins, used by the network plot
   patient_shift_matrix <- reactive({
-    bins_now <- selected_bins()
-    req(length(bins_now) > 0)
-    df <- patient_bin_shift[patient_bin_shift$bin_id %in% bins_now, c("patient_id", "bin_id", "shift")]
-    mat <- build_wide_matrix(df, "patient_id", "bin_id", "shift")
-    if (is.null(mat) || nrow(mat) < 3 || ncol(mat) < 2) return(NULL)
-    mat
-  })
+ })
   
   output$tn_density <- renderPlot({
-    df <- selected_bin_table()
-    validate(need(nrow(df) > 0, "No bins selected. Choose a chromosome or bins in the sidebar."))
-    plot_df <- data.frame(
-      Type = rep(c("Tumor", "Normal"), each = nrow(df)),
-      Methylation = c(df$mean_methylation_tumor, df$mean_methylation_normal)
-    )
-    plot_df <- plot_df[is.finite(plot_df$Methylation), ]
-    validate(need(nrow(plot_df) > 0, "No valid methylation values for the current selection."))
-    
-    ggplot(plot_df, aes(x = Methylation, fill = Type, color = Type)) +
-      geom_density(alpha = 0.35, linewidth = 0.9, na.rm = TRUE) +
-      scale_fill_manual(values = c("Tumor" = "#d1495b", "Normal" = "#3aa9c9")) +
-      scale_color_manual(values = c("Tumor" = "#d1495b", "Normal" = "#3aa9c9")) +
-      labs(x = "Mean methylation (per bin)", y = "Density", title = region_label(), fill = NULL, color = NULL) +
-      theme_minimal(base_size = 12) +
-      theme(legend.position = "top")
-  })
+})
   
   output$tn_projection <- renderPlotly({
-    method <- input$proj_method
-    if (is.null(method)) method <- "PCA"
-    mat <- projection_matrix()
-    validate(need(!is.null(mat),
-                  "Not enough samples with complete data for the selected bins to compute a projection. Try selecting more bins."))
-    
-    if (identical(method, "PCA")) {
-      pca <- prcomp(mat, center = TRUE, scale. = TRUE)
-      coords <- as.data.frame(pca$x[, 1:2])
-      names(coords) <- c("Dim1", "Dim2")
-      var_exp <- round(100 * summary(pca)$importance[2, 1:2], 1)
-      xlab <- paste0("PC1 (", var_exp[1], "%)")
-      ylab <- paste0("PC2 (", var_exp[2], "%)")
-    } else {
-      validate(need(requireNamespace("uwot", quietly = TRUE),
-                    "UMAP requires the 'uwot' package, which isn't installed. Install it with install.packages('uwot'), or switch to PCA."))
-      set.seed(42)
-      n_neighbors <- max(2, min(15, nrow(mat) - 1))
-      um <- uwot::umap(mat, n_neighbors = n_neighbors, n_components = 2)
-      coords <- as.data.frame(um)
-      names(coords) <- c("Dim1", "Dim2")
-      xlab <- "UMAP 1"
-      ylab <- "UMAP 2"
-    }
-    
-    coords$sample_id <- rownames(mat)
-    coords <- merge(coords, metadata[, c("sample_id", "patient_id", "Type", "sexe")], by = "sample_id")
-    
-    plot_ly(
-      coords, x = ~Dim1, y = ~Dim2, color = ~Type,
-      colors = c("Tumor" = "#d1495b", "Normal" = "#3aa9c9"),
-      type = "scatter", mode = "markers",
-      marker = list(size = 10, line = list(color = "#0b2436", width = 1)),
-      text = ~paste0("Sample: ", sample_id, "<br>Patient: ", patient_id, "<br>Type: ", Type),
-      hoverinfo = "text"
-    ) |>
-      layout(
-        xaxis = list(title = xlab), yaxis = list(title = ylab),
-        legend = list(orientation = "h", x = 0, y = 1.08)
-      )
-  })
+})
   
   output$tn_network <- renderPlot({
-    mat <- patient_shift_matrix()
-    validate(need(!is.null(mat),
-                  "Not enough overlapping data across patients for the selected bins to build a similarity network. Try selecting more bins."))
-    
-    cor_mat <- stats::cor(t(mat))
-    layout_xy <- tryCatch(stats::cmdscale(stats::as.dist(1 - cor_mat), k = 2), error = function(e) NULL)
-    validate(need(!is.null(layout_xy), "Couldn't compute a layout for the current selection."))
-    
-    nodes <- data.frame(patient_id = rownames(mat), x = layout_xy[, 1], y = layout_xy[, 2], stringsAsFactors = FALSE)
-    nodes <- merge(nodes, patient_annotation, by = "patient_id", all.x = TRUE)
-    nodes$mss_label <- as.character(nodes$MSS)
-    nodes$mss_label[is.na(nodes$mss_label)] <- "unknown"
-    mss_palette <- categorical_palette(nodes$mss_label)
-    
-    # Draw an edge between the most similar pairs of patients only (top 15% by correlation), to keep the plot readable
-    ids <- rownames(mat)
-    edge_df <- NULL
-    if (length(ids) >= 2) {
-      pairs <- utils::combn(ids, 2)
-      edge_df <- data.frame(
-        from = pairs[1, ], to = pairs[2, ],
-        corr = cor_mat[cbind(pairs[1, ], pairs[2, ])],
-        stringsAsFactors = FALSE
-      )
-      edge_df <- edge_df[is.finite(edge_df$corr), ]
-      thresh <- stats::quantile(edge_df$corr, 0.85, na.rm = TRUE)
-      edge_df <- edge_df[edge_df$corr >= thresh, ]
-      edge_df <- merge(edge_df, setNames(nodes[, c("patient_id", "x", "y")], c("from", "x_from", "y_from")), by = "from")
-      edge_df <- merge(edge_df, setNames(nodes[, c("patient_id", "x", "y")], c("to", "x_to", "y_to")), by = "to")
-    }
-    
-    p <- ggplot()
-    if (!is.null(edge_df) && nrow(edge_df) > 0) {
-      p <- p + geom_segment(
-        data = edge_df, aes(x = x_from, y = y_from, xend = x_to, yend = y_to, alpha = corr),
-        color = "#7d92a3", linewidth = 0.4, show.legend = FALSE)
-    }
-    p +
-      geom_point(data = nodes, aes(x = x, y = y, fill = mss_label), shape = 21, size = 6, color = "#0b2436", stroke = 0.6) +
-      geom_text(data = nodes, aes(x = x, y = y, label = patient_id), vjust = -1.4, size = 3, color = "#16324f") +
-      scale_fill_manual(values = mss_palette, name = "MSS status") +
-      labs(
-        x = "Dimension 1", y = "Dimension 2",
-        title = "Patient similarity network (methylation-shift correlation)",
-        subtitle = region_label()
-      ) +
-      theme_minimal(base_size = 12) +
-      theme(legend.position = "bottom", panel.grid.minor = element_blank())
-  })
+})
   
   # 4. Genome-wide Profile
   output$manhattan_plot <- renderPlotly({
