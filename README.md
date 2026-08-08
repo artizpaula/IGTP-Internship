@@ -1,6 +1,6 @@
 # Exploration of Epigenomic Data in Colorectal Cancer
 
-### Paula Artiz Dueñas - UPC
+##### Paula Artiz Dueñas - UPC
 
 ### Goal of the project
 
