@@ -10,19 +10,19 @@ The main objective of this project is to develop an interactive web application 
 
 The app is organized into a sidebar for data selection and a set of tabs for exploration and visualization.
 
-**Sidebar — Data Selection**
+**Sidebar: Data Selection**
 - Choose a chromosome and search/select specific genomic bins (e.g. `1_1000000`).
 - Add all bins from the selected chromosome or clear the current selection.
 - Upload a list of bins from a `.csv`, `.tsv`, or `.txt` file.
 
-**Tabs — Exploration and Visualization**
-1. **Overview** — Summary panels comparing tumor vs. normal methylation, mutation status, clinical stage/MSI-MSS composition, and sex distribution for the current bin selection.
-2. **Genome Browser** — Browse methylation across the whole genome; jump to a chromosome, zoom in/out, or search by coordinates, bin ID, or gene name.
-3. **Tumor vs. Normal** — Density plots, PCA/UMAP projection, and a patient similarity network based on methylation.
-4. **Genome-wide Profile** — A Manhattan-style plot of the tumor–normal methylation difference across all bins, flagging statistically significant and outlier bins.
-5. **Feature × Chromosome Heatmap** — A heatmap of methylation shift per patient and chromosome, with an optional colour strip for a selected clinical feature.
-6. **Clinical Explorer** — Compare tumor methylation by mutation status (KRAS, BRAF, TP53) and browse/filter the full clinical metadata table, with patient selection linked to the plot.
-7. **Bin Table** — A searchable, filterable table of all genomic bins with their methylation statistics and annotations, downloadable as a CSV.
+**Tabs: Exploration and Visualization**
+1. **Overview**: Summary panels comparing tumor vs. normal methylation, mutation status, clinical stage/MSI-MSS composition, and sex distribution for the current bin selection.
+2. **Genome Browser**: Browse methylation across the whole genome; jump to a chromosome, zoom in/out, or search by coordinates, bin ID, or gene name.
+3. **Tumor vs. Normal**: Density plots, PCA/UMAP projection, and a patient similarity network based on methylation.
+4. **Genome-wide Profile**: A Manhattan-style plot of the tumor–normal methylation difference across all bins, flagging statistically significant and outlier bins.
+5. **Feature × Chromosome Heatmap**: A heatmap of methylation shift per patient and chromosome, with an optional colour strip for a selected clinical feature.
+6. **Clinical Explorer**: Compare tumor methylation by mutation status (KRAS, BRAF, TP53) and browse/filter the full clinical metadata table, with patient selection linked to the plot.
+7. **Bin Table**: A searchable, filterable table of all genomic bins with their methylation statistics and annotations, downloadable as a CSV.
 
 ## Necessary Datasets
 
@@ -40,8 +40,8 @@ These scripts must be run in order to produce `data_app.rds`, which is then load
 
 ## Necessary Files
 
-- `app_final_.R` — Main Shiny application (UI + server logic).
-- `data_app.rds` — Pre-processed dataset consumed by the app (path set at the top of the script and should be updated to match your local environment).
+- `app_final_.R`: Main Shiny application (UI + server logic).
+- `data_app.rds`: Pre-processed dataset consumed by the app (path set at the top of the script and should be updated to match your local environment).
 - Required R packages: `shiny`, `bslib`, `bsicons`, `DT`, `plotly`, `ggplot2`, `patchwork`.
 
 ## Running the App
