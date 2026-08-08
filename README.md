@@ -2,11 +2,11 @@
 
 ##### Paula Artiz Dueñas - UPC
 
-#### Goal of the project
+### Goal of the project
 
 The main objective of this project is to develop an interactive web application using R Shiny to explore and visualize genomic bins. The application will enable users to analyze methylation patterns, compare tumor and normal samples, filter genomic regions, and explore genomic annotations through interactive visualizations.
 
-#### Functioning of the App
+### Functioning of the App
 
 The app is organized into a sidebar for data selection and a set of tabs for exploration and visualization.
 
@@ -24,7 +24,7 @@ The app is organized into a sidebar for data selection and a set of tabs for exp
 6. **Clinical Explorer**: Compare tumor methylation by mutation status (KRAS, BRAF, TP53) and browse/filter the full clinical metadata table, with patient selection linked to the plot.
 7. **Bin Table**: A searchable, filterable table of all genomic bins with their methylation statistics and annotations, downloadable as a CSV.
 
-#### Necessary Datasets
+### Necessary Datasets
 
 The app loads a single pre-processed data object (`data_app.rds`) containing:
 - Sample and patient metadata (clinical variables, mutation status, etc.).
@@ -39,17 +39,18 @@ This data object is generated upstream from the project's raw data, using the fo
 
 Running them in sequence produces `data_app.rds`, which is then loaded directly by `app_final_.R`.
 
-#### Necessary Files
+### Necessary Files
 
 - `app_final_.R`: Main Shiny application (UI + server logic).
 - `data_app.rds`: Pre-processed dataset consumed by the app (path set at the top of the script and should be updated to match your local environment).
 - Required R packages: `shiny`, `bslib`, `bsicons`, `DT`, `plotly`, `ggplot2`, `patchwork`.
 
-#### Running the App
+### Running the App
 
 1. Ensure the required R packages are installed.
 2. Update the path to `data_app.rds` in `app_final_.R` if needed.
 3. Run the app from R/RStudio with:
+   
    ```r
    shiny::runApp("app_final_.R")
    ```
