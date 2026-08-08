@@ -9,7 +9,8 @@ read_methylation_table <- function(filepath) {
   first_line <- readLines(filepath, n = 1L, warn = FALSE)
   if (length(first_line) == 0L || !nzchar(first_line)) {
     return(data.table(chr = character(0), pos = integer(0), 
-                       CpG = character(0), alu_region = character(0))) # empty file gets an empty table with the right columns
+                       CpG = character(0), alu_region = character(0),
+                       meth = numeric(0))) # empty file gets an empty table with the right columns
   }
   first_fields <- trimws(strsplit(first_line, "\t", fixed = TRUE)[[1]]) # get individual columns
   has_header <- tolower(first_fields[1]) == "chr" # first row is a header if first entry is "chr
@@ -21,29 +22,38 @@ read_methylation_table <- function(filepath) {
     idx_end <- match("end", header_lower) # finds which column has the end position in the chr
     idx_cpg <- match("cpg", header_lower) # finds which column has the CpG values
     idx_alu <- match("alu_region", header_lower) # finds which column has the alu values
+    idx_meth <- match("meth", header_lower)
+    if (is.na(idx_meth)) idx_meth <- match("meth_pct", header_lower)
     if (anyNA(c(idx_chr, idx_end, idx_cpg, idx_alu))) {
       stop("Could not find required column(s) chr/end/CpG/alu_region in header of: ", filepath)
     }
+    select_idx <- c(idx_chr, idx_end, idx_cpg, idx_alu, if (!is.na(idx_meth)) idx_meth)
+    col_names  <- c("chr", "pos", "CpG", "alu_region", if (!is.na(idx_meth)) "meth")
     dt <- fread(filepath, sep = "\t", header = TRUE,
-                select = c(idx_chr, idx_end, idx_cpg, idx_alu),
+                select = select_idx,
                 na.strings = c("", "NA", "."), showProgress = FALSE)
-    setnames(dt, c("chr", "pos", "CpG", "alu_region")) # rename the extracted columns (easier for later steps)
+    setnames(dt, col_names) # rename the extracted columns (easier for later steps)
+    if (is.na(idx_meth)) dt[, meth := NA_real_]
 
   } else {
     # No header row results in fall back to the documented column layouts by position
     ncol_detected <- length(first_fields)
     if (ncol_detected == 8L) {
-      idx_chr <- 1L; idx_end <- 3L; idx_cpg <- 4L; idx_alu <- 8L # chr start end CpG meth_pct meth unmeth alu_region
+      # chr start end CpG meth_pct meth unmeth alu_region
+      idx_chr <- 1L; idx_end <- 3L; idx_cpg <- 4L; idx_meth <- 6L; idx_alu <- 8L
     } else if (ncol_detected == 10L) {
       # chr start end CpG strand meth_pct meth unmeth compartment alu_region, (as in run134)
-      idx_chr <- 1L; idx_end <- 3L; idx_cpg <- 4L; idx_alu <- 10L
+      idx_chr <- 1L; idx_end <- 3L; idx_cpg <- 4L; idx_meth <- 7L; idx_alu <- 10L
     } else {
-      idx_chr <- 1L; idx_end <- 3L; idx_cpg <- 4L; idx_alu <- ncol_detected
-      warning("Unexpected column count (", ncol_detected, ") with no header in ", filepath)       # Fallback for unexpected layouts
+      idx_chr <- 1L; idx_end <- 3L; idx_cpg <- 4L; idx_meth <- NA_integer_; idx_alu <- ncol_detected
+      warning("Unexpected column count (", ncol_detected, ") with no header in ", filepath) # Fallback for unexpected layouts
     }
-    dt <- fread(filepath, sep = "\t", header = FALSE,select = c(idx_chr, idx_end, idx_cpg, idx_alu),
+    select_idx <- c(idx_chr, idx_end, idx_cpg, idx_alu, if (!is.na(idx_meth)) idx_meth)
+    col_names  <- c("chr", "pos", "CpG", "alu_region", if (!is.na(idx_meth)) "meth")
+    dt <- fread(filepath, sep = "\t", header = FALSE, select = select_idx,
                 na.strings = c("", "NA", "."), showProgress = FALSE)
-    setnames(dt, c("chr", "pos", "CpG", "alu_region"))
+    setnames(dt, col_names)
+    if (is.na(idx_meth)) dt[, meth := NA_real_]
   }
 
   # Ensure consistent column types
@@ -51,6 +61,7 @@ read_methylation_table <- function(filepath) {
   dt[, pos := suppressWarnings(as.integer(pos))]
   dt[,CpG := as.character(CpG)]
   dt[,alu_region := as.character(alu_region)]
+  dt[, meth := suppressWarnings(as.numeric(meth))] # keep each CpG-Alu row's own methylation value
   dt[!is.na(pos)]
 }
 
@@ -68,14 +79,23 @@ assign_bins <- function(dt, bin_size = 1e6) {
 # Summarize one sample's already-read methylation table into per-bin counts
 summarize_bins <- function(dt, bin_size = 1e6) {
   if (nrow(dt) == 0L) {
-    return(data.table(chr = character(0), bin_start = integer(0), bin_end = integer(0), n_CpGs = integer(0), n_Alus = integer(0)))}
+    return(data.table(chr = character(0), bin_start = integer(0), bin_end = integer(0),
+                       n_CpGs = integer(0), n_Alus = integer(0),
+                       mean_meth = numeric(0), sum_meth = numeric(0), pct_meth = numeric(0)))}
   dt <- assign_bins(dt, bin_size)
-  
-  # Main part: counting CpGs and unique Alu elements per bin
-    out <- dt[, .(
-    n_CpGs = sum(!is.na(CpG) & nzchar(CpG)), # counts every row in the bin that has a non-empty CpG entry (each row=one CpG site)
-    n_Alus = uniqueN(alu_region[!is.na(alu_region) & nzchar(alu_region)]) # counts distinct alu regions in the bin, unique alu (if alu is in many rows it is only counted once)
+
+  has_cpg <- !is.na(dt$CpG) & nzchar(dt$CpG)
+
+  out <- dt[has_cpg, .(
+    n_CpGs    = .N, # every row in the bin with a non-empty CpG entry counts once, i.e. once per CpG-Alu association (a CpG in 2 Alus counts twice)
+    n_Alus    = uniqueN(alu_region[!is.na(alu_region) & nzchar(alu_region)]), # distinct alu regions touched in the bin (does not affect n_CpGs/meth stats above)
+    mean_meth = mean(meth, na.rm = TRUE), # average methylation across every individual CpG-Alu observation in the bin
+    sum_meth  = sum(meth, na.rm = TRUE),  # total methylation signal across every individual CpG-Alu observation
+    pct_meth  = 100 * sum(!is.na(meth) & meth > 0) / sum(!is.na(meth)) # % of CpG-Alu observations with a positive methylation value
   ), by = .(chr, bin_start, bin_end)]
+  # NaN (e.g. 0/0 when no meth values are available) reads more clearly as NA
+  out[is.nan(mean_meth), mean_meth := NA_real_]
+  out[is.nan(pct_meth), pct_meth := NA_real_]
   setorder(out, chr, bin_start)
   out[]
 }
@@ -162,19 +182,22 @@ aggregate_bin_annotation <- function(sample_tables, fun = c("max", "sum", "mean"
   sample_tables <- sample_tables[vapply(sample_tables, nrow, integer(1)) > 0] # ignore empty samples
   if (length(sample_tables) == 0) {
     return(data.table(chr = character(0), bin_start = integer(0), bin_end = integer(0),
-                       n_cpg = integer(0), n_alu = integer(0)))
+                       n_cpg = integer(0), n_alu = integer(0),
+                       mean_meth = numeric(0), pct_meth = numeric(0)))
   }
-  combined <- rbindlist(sample_tables, idcol = "sample_id")
+  combined <- rbindlist(sample_tables, idcol = "sample_id", fill = TRUE)
   agg_fun <- switch(fun,
     max = function(x) max(x, na.rm = TRUE),# takes the largest value across samples for a bin
     sum = function(x) sum(x, na.rm = TRUE),# adds up values across samples for a bin
     mean = function(x) mean(x, na.rm = TRUE),# averages values across samples for a bin
     median = function(x) stats::median(x, na.rm = TRUE) # takes the middle value across samples for a bin
   )
-  # Aggregate counts across samples
+
   out <- combined[, .(
-    n_cpg = as.integer(round(agg_fun(n_CpGs))), # combines each sample's CpG count for this bin into one number
-    n_alu = as.integer(round(agg_fun(n_Alus)))), # same as before but with alus
+    n_cpg     = as.integer(round(agg_fun(n_CpGs))), # combines each sample's CpG-Alu association count for this bin into one number
+    n_alu     = as.integer(round(agg_fun(n_Alus))), # same as before but with distinct alus
+    mean_meth = agg_fun(mean_meth), # combines each sample's average per-observation methylation for this bin
+    pct_meth  = agg_fun(pct_meth)), # combines each sample's % methylated CpG-Alu observations for this bin
     by = .(chr, bin_start, bin_end)]
   setorder(out, chr, bin_start)  # sorts the final table
   out[ ]
