@@ -518,7 +518,7 @@ ui <- page_sidebar(
     title = "Exploration and Visualization",
     
     # 1. Overview
-    nav_panel("Overview", layout_columns(col_widths = c(6, 6), row_heights = c("425px"), card(card_header("Tumor vs. Normal Methylation"), plotOutput("overview_boxplot", height = "300px"), height = "350px"), card(card_header("Mutation Status vs. Methylation Shift"), plotOutput("overview_mutations", height = "300px"), height = "350px"), card(card_header("Stage & MSI/MSS vs. Methylation Shift"), plotOutput("overview_composition", height = "300px"), height = "350px"), card(card_header("Sex Distribution"), plotOutput("overview_sex_comparison", height = "300px"), height = "350px"))),
+    nav_panel("Overview", uiOutput("overview_content")),
     
     # 2. Genome Browser
     nav_panel("Genome Browser", div(style = "font-size:13px; color:#6c757d; margin-bottom:10px;", "Browse methylation across the whole genome: pick a chromosome, zoom in/out, or search by coordinates, bin ID, or gene name."), card(card_header("All chromosomes, click a point to jump to that chromosome"), plotlyOutput("genome_overview_plot", height = "420px")), card(card_header(textOutput("browser_position_header", inline = TRUE)), div(style = "display:flex; flex-wrap:wrap; gap:0px; align-items:center", div(style = "display:flex; gap:6px; align-items:center; flex:1 1 320px; min-width:280px;", textInput("browser_search", label = NULL, placeholder = "e.g. 12:25000000-26000000, 12_25000000, or KRAS", width = "100%"), actionButton("browser_search_go", NULL, icon = bs_icon("search"), class = "btn-sm btn-outline-secondary")), div(style = "display:flex; gap:4px; align-items:center;", actionButton("prev_chr", NULL, icon = bs_icon("chevron-left"), class = "btn-sm btn-outline-secondary"), selectInput("browser_chr", NULL, choices = chrom_list, selected = "1", width = "90px"), actionButton("next_chr", NULL, icon = bs_icon("chevron-right"), class = "btn-sm btn-outline-secondary")), div(style = "display:flex; gap:4px;", actionButton("zoom_in", NULL, icon = bs_icon("zoom-in"), class = "btn-sm btn-outline-secondary"), actionButton("zoom_out", NULL, icon = bs_icon("zoom-out"), class = "btn-sm btn-outline-secondary"), actionButton("zoom_reset", "Whole chromosome", icon = bs_icon("arrow-counterclockwise"), class = "btn-sm btn-outline-secondary"))), plotlyOutput("browser_chr_plot", height = "560px"), tags$div("Tip: bins currently in your sidebar selection are outlined on the plot above. You can also drag directly on the plot to zoom, and double-click it to reset.", style = "font-size:11px; color:#7d92a3; margin-top:6px;"))),
@@ -617,24 +617,202 @@ server <- function(input, output, session) {
   # 1. Overview
   
   overview_ml_selected <- reactive({
-})
+    df <- methylation_long
+    if ("bin_id" %in% names(df)) {
+      df <- df[df$bin_id %in% selected_bins(), ]
+    } else {
+      df <- df[df$chr %in% unique(selected_bin_table()$chr), ]
+    }
+    merge(df, metadata[, c("sample_id", "patient_id", "Type", "sexe")], by = "sample_id")
+  })
   
   # One row per patient: mean methylation (Tumor/Normal) and the Tumor-Normal shift
   overview_patient_shift <- reactive({
-})
+    df <- overview_ml_selected()
+    req(nrow(df) > 0)
+    agg <- aggregate(methylation ~ patient_id + Type, data = df, FUN = mean, na.rm = TRUE)
+    wide <- reshape(agg, idvar = "patient_id", timevar = "Type", direction = "wide")
+    names(wide) <- sub("^methylation\\.", "", names(wide))
+    wide$shift <- wide$Tumor - wide$Normal
+    merge(wide, patient_annotation, by = "patient_id")
+  })
   
+  # Small label reused on every Overview plot so it's clear which region is shown
+  region_label <- reactive({
+    df <- selected_bin_table()
+    paste0(nrow(df), " bin(s) - chr", paste(unique(df$chr), collapse = ", "))
+  })
+  
+  # Overview: click-to-enlarge for the 4 plotso nothing about how the plots themselves are
+  # computed changes.
+  overview_plot_meta <- list(
+    list(id = "overview_boxplot",title = "Tumor vs. Normal Methylation"),
+    list(id = "overview_mutations", title = "Mutation Status vs. Methylation Shift"),
+    list(id = "overview_composition", title = "Stage & MSI/MSS vs. Methylation Shift"),
+    list(id = "overview_sex_comparison", title = "Sex Distribution")
+  )
+  
+  # NULL = show the 2x2 grid; otherwise holds the output id of the plot
+  overview_zoom <- reactiveVal(NULL)
+  
+  # Clicking the expand icon, or clicking the plot itself, enlarges it
+  lapply(overview_plot_meta, function(pm) {
+    observeEvent(input[[paste0("expand_", pm$id)]], { overview_zoom(pm$id) }, ignoreInit = TRUE)
+    observeEvent(input[[paste0(pm$id, "_click")]], { overview_zoom(pm$id) }, ignoreInit = TRUE)
+  })
+  
+  observeEvent(input$overview_back, { overview_zoom(NULL) }, ignoreInit = TRUE)
+  
+  output$overview_content <- renderUI({
+    zoom <- overview_zoom()
+    
+    if (is.null(zoom)) {
+      # Overview grid: same 2x2 layout as before, each card now has a small
+      # expand icon in its header and its plot can also be clicked directly.
+      card_list <- lapply(overview_plot_meta, function(pm) {
+        card(
+          card_header(
+            div(style = "display:flex; justify-content:space-between; align-items:center; width:100%;",
+                tags$span(pm$title),
+                actionButton(paste0("expand_", pm$id), NULL, icon = bs_icon("arrows-fullscreen"),
+                             class = "btn-sm btn-outline-secondary", title = "Ampliar",
+                             style = "padding:2px 7px; margin-left:auto; margin-right:-5px;")
+            )
+          ),
+          plotOutput(pm$id, height = "300px", click = paste0(pm$id, "_click")),
+          height = "350px"
+        )
+      })
+      do.call(layout_columns, c(list(col_widths = c(6, 6), row_heights = c("425px")), card_list))
+      
+    } else {
+      # Enlarged single-plot view, with a button to go back to the 2x2 grid.
+      meta <- Filter(function(pm) identical(pm$id, zoom), overview_plot_meta)[[1]]
+      tagList(
+        div(style = "margin-bottom:10px;",
+            actionButton("overview_back", "Go back to Overview", icon = bs_icon("arrow-left-circle"),
+                         class = "btn-sm btn-outline-primary")),
+        card(card_header(meta$title), plotOutput(meta$id, height = "600px"), height = "650px")
+      )
+    }
+  })
   
   output$overview_sex_comparison <- renderPlot({
-})
+    # Counted at the patient level (via overview_patient_shift), not per bin-row
+    df <- overview_patient_shift()
+    validate(need(!is.null(df) && nrow(df) > 0, "No data available for the current selection."))
+    
+    sex_labels <- c("Dona" = "Female", "Home" = "Male")
+    sex_vals <- sex_labels[as.character(df$sexe)]
+    sex_vals[is.na(sex_vals)] <- "Unknown"
+    sex_counts <- as.data.frame(table(Sex = sex_vals))
+    sex_counts <- sex_counts[sex_counts$Freq > 0, ]
+    names(sex_counts)[2] <- "Count"
+    validate(need(nrow(sex_counts) > 0, "No sex information available for the current selection."))
+    sex_counts$Pct <- sex_counts$Count / sum(sex_counts$Count)
+    sex_counts$Label <- paste0(sex_counts$Sex, "\n", round(100 * sex_counts$Pct), "%")
+    
+    ggplot(sex_counts, aes(x = 2, y = Count, fill = Sex)) +
+      geom_col(width = 1, color = "white", linewidth = 1.2) +
+      geom_text(aes(label = Label), position = position_stack(vjust = 0.5),
+                size = 3.4, color = "white", fontface = "bold", lineheight = 0.9) +
+      coord_polar(theta = "y") +
+      xlim(0.2, 2.5) +
+      scale_fill_manual(values = c("Female" = "#d1495b", "Male" = "#3aa9c9", "Unknown" = "#b7c1c9")) +
+      labs(fill = NULL, subtitle = paste0(nrow(df), " patient(s) \u2013 ", region_label())) +
+      theme_void(base_size = 12) +
+      theme(
+        legend.position = "bottom",
+        plot.subtitle = element_text(size = rel(0.78), color = "#7d92a3", hjust = 0.5)
+      )
+  })
   
   output$overview_boxplot <- renderPlot({
-})
+    df <- selected_bin_table()
+    validate(need(nrow(df) > 0, "No bins selected. Choose a chromosome or bins in the sidebar."))
+    plot_df <- data.frame(
+      Type = rep(c("Normal", "Tumor"), each = nrow(df)),
+      Methylation = c(df$mean_methylation_normal, df$mean_methylation_tumor)
+    )
+    plot_df <- plot_df[is.finite(plot_df$Methylation), ]
+    validate(need(nrow(plot_df) > 0, "No valid methylation values for the current selection."))
+    plot_df$Type <- factor(plot_df$Type, levels = c("Normal", "Tumor"))
+    
+    ggplot(plot_df, aes(x = Type, y = Methylation, fill = Type)) +
+      geom_jitter(width = 0.07, size = 0.9, alpha = 0.25, color = "#16324f") +
+      geom_boxplot(width = 0.45, outlier.shape = NA, alpha = 0.92, color = "#16324f", linewidth = 0.4) +
+      stat_summary(fun = mean, geom = "point", shape = 23, size = 2.4,
+                   fill = "white", color = "#16324f", stroke = 0.8) +
+      scale_fill_manual(values = c("Tumor" = "#d1495b", "Normal" = "#3aa9c9")) +
+      scale_y_continuous(limits = c(0, 1), expand = expansion(mult = c(0.02, 0.06))) +
+      labs(x = NULL, y = "Mean methylation (per bin)", subtitle = region_label(),
+           caption = "\u25c7 mean") +
+      theme_app() +
+      theme(legend.position = "none")
+  })
   
   output$overview_mutations <- renderPlot({
-})
+    df <- overview_patient_shift()
+    genes <- c("KRAS", "BRAF", "TP53")
+    long_df <- do.call(rbind, lapply(genes, function(g) {
+      data.frame(Gene = g, Status = as.character(df[[g]]), Shift = df$shift, stringsAsFactors = FALSE)
+    }))
+    long_df <- long_df[!is.na(long_df$Status) & is.finite(long_df$Shift), ]
+    validate(need(nrow(long_df) > 0, "No mutation status data available for the current selection."))
+    
+    # Convention used for the KRAS/BRAF/TP53 fields: 0 = wild-type, 1 = mutant
+    status_labels <- c("0" = "Wild-type", "1" = "Mutant")
+    long_df$Status <- factor(
+      ifelse(long_df$Status %in% names(status_labels), status_labels[long_df$Status], "Unknown"),
+      levels = c("Wild-type", "Mutant", "Unknown")
+    )
+    n_by_gene <- table(long_df$Gene)
+    long_df$GeneLabel <- factor(
+      paste0(long_df$Gene, " (n=", n_by_gene[long_df$Gene], ")"),
+      levels = paste0(genes, " (n=", n_by_gene[genes], ")")
+    )
+    
+    ggplot(long_df, aes(x = Status, y = Shift, fill = Status)) +
+      geom_hline(yintercept = 0, color = "#7d92a3", linewidth = 0.4, linetype = "dashed") +
+      geom_jitter(width = 0.1, size = 0.9, alpha = 0.3, color = "#16324f") +
+      geom_boxplot(width = 0.5, outlier.shape = NA, alpha = 0.92, color = "#16324f", linewidth = 0.4) +
+      scale_fill_manual(values = c("Wild-type" = "#3aa9c9", "Mutant" = "#d1495b", "Unknown" = "darkgray")) +
+      facet_wrap(~ GeneLabel, nrow = 1, scales = "free_x") +
+      labs(x = NULL, y = "Methylation shift (Tumor \u2212 Normal)", subtitle = region_label()) +
+      theme_app() +
+      theme(legend.position = "none", axis.text.x = element_text(angle = 20, hjust = 1))
+  })
   
   output$overview_composition <- renderPlot({
-})
+    df <- overview_patient_shift()
+    feats <- c("estadi2", "MSS")
+    long_df <- do.call(rbind, lapply(feats, function(f) {
+      data.frame(Feature = f, Level = as.character(df[[f]]), Shift = df$shift, stringsAsFactors = FALSE)
+    }))
+    long_df <- long_df[!is.na(long_df$Level) & is.finite(long_df$Shift), ]
+    validate(need(nrow(long_df) > 0, "No stage/MSS data available for the current selection."))
+    
+    agg <- aggregate(Shift ~ Feature + Level, data = long_df, FUN = mean)
+    n_df <- aggregate(Shift ~ Feature + Level, data = long_df, FUN = length)
+    names(n_df)[3] <- "n"
+    agg <- merge(agg, n_df, by = c("Feature", "Level"))
+    
+    # Reuse the friendly names already defined for the heatmap feature selector
+    feature_display <- setNames(names(heatmap_feature_choices), heatmap_feature_choices)
+    agg$FeatureLabel <- factor(feature_display[agg$Feature], levels = feature_display[feats])
+    agg$Level <- factor(agg$Level, levels = natural_level_order(agg$Level))
+    
+    ggplot(agg, aes(x = Level, y = Shift, fill = Feature)) +
+      geom_hline(yintercept = 0, color = "#7d92a3", linewidth = 0.4) +
+      geom_col(width = 0.6, show.legend = FALSE) +
+      geom_text(aes(y = Shift, label = paste0("n=", n), vjust = ifelse(Shift >= 0, -0.5, 1.3)),
+                size = 2.7, color = "#16324f") +
+      scale_fill_manual(values = c("estadi2" = "#d1495b", "MSS" = "#3aa9c9")) +
+      scale_y_continuous(expand = expansion(mult = c(0.15, 0.18))) +
+      facet_wrap(~ FeatureLabel, scales = "free_x", nrow = 1) +
+      labs(x = NULL, y = "Mean methylation shift (Tumor \u2212 Normal)", subtitle = region_label()) +
+      theme_app()
+  })
   
   # 2. Genome Browser
   nav <- reactiveValues(chr = NULL, start = NULL, end = NULL)
