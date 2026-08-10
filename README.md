@@ -35,7 +35,7 @@ This data object is generated upstream from the project's raw data, using the fo
 
 1. `Alus_and_CpGs.R`
 2. `Week_2_With_Prevalence.R`
-3. `Gene_and_Functional_Annotation.R`
+3. `Gene_and_Functional_Annotation.R` -> Not developed yet
 
 Running them in sequence produces `data_app.rds`, which is then loaded directly by `app_final_.R`.
 
