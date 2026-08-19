@@ -58,17 +58,21 @@ bin_table_columns <- list(
   list(id = "mean_methylation_normal", label = "Mean Meth (Normal)", digits = 3),
   list(id = "sd_methylation_tumor", label = "SD Meth (Tumor)", digits = 3),
   list(id = "sd_methylation_normal",label = "SD Meth (Normal)", digits = 3),
-  list(id = "mean_diff_tumor_normal",  label = "Mean Diff (Tumor - Normal)", digits = 3),
+  list(id = "mean_diff_tumor_normal",  label = "Mean Difference", digits = 3),
   list(id = "n_alu", label = "Alu Count"),
   list(id = "n_cpg", label = "CpG Count"))
 
 # Numeric metrics exposed as filters
+# "step" controls the slider granularity: 0.01 for continuous methylation
+# metrics, 1 for integer counts (CpG sites, Alu elements).
 bin_table_filters <- list(
-  list(id = "mean_methylation_tumor", label = "Mean Meth (Tumor)", op = ">="),
-  list(id = "mean_methylation_normal", label = "Mean Meth (Normal)", op = ">="),
-  list(id = "sd_methylation_tumor", label = "SD Meth (Tumor)", op = ">="),
-  list(id = "sd_methylation_normal",label = "SD Meth (Normal)", op = ">="),
-  list(id = "mean_diff_tumor_normal", label = "Mean Diff (Tumor - Normal)", op = ">=")
+  list(id = "mean_methylation_tumor", label = "Mean Meth (Tumor)", op = ">=", step = 0.01),
+  list(id = "mean_methylation_normal", label = "Mean Meth (Normal)", op = ">=", step = 0.01),
+  list(id = "sd_methylation_tumor", label = "SD Meth (Tumor)", op = ">=", step = 0.01),
+  list(id = "sd_methylation_normal",label = "SD Meth (Normal)", op = ">=", step = 0.01),
+  list(id = "mean_diff_tumor_normal", label = "Mean Difference", op = ">=", step = 0.01),
+  list(id = "n_cpg", label = "CpG Count", op = ">=", step = 1),
+  list(id = "n_alu", label = "Alu Count", op = ">=", step = 1)
 )
 
 # Builds visual grid of slider inputs for the Bin Table filters
@@ -76,18 +80,24 @@ build_bin_table_filter_inputs <- function(filters, df) {
   lapply(filters, function(f) {
     vals <- df[[f$id]]
     vals <- vals[is.finite(vals)]
+    step <- if (!is.null(f$step)) f$step else 0.01
     rng <- if (length(vals) > 0) range(vals) else c(0, 1)
     
-    lo <- floor(rng[1] * 100) / 100
-    hi <- ceiling(rng[2] * 100) / 100
-    if (hi <= lo) hi <- lo + 0.01
+    if (step >= 1) {
+      lo <- floor(rng[1])
+      hi <- ceiling(rng[2])
+    } else {
+      lo <- floor(rng[1] * 100) / 100
+      hi <- ceiling(rng[2] * 100) / 100
+    }
+    if (hi <= lo) hi <- lo + step
     
     div(
       style = "flex: 1 1 200px; min-width: 180px; max-width: 250px;",
       sliderInput(
         inputId = paste0("binfilter_", f$id),
         label = paste0(f$label, " ", f$op),
-        min = lo, max = hi, value = lo, step = 0.01,
+        min = lo, max = hi, value = lo, step = step,
         width = "100%"
       )
     )
@@ -96,6 +106,14 @@ build_bin_table_filter_inputs <- function(filters, df) {
 
 # Applies all configured filters to a bin_table subset
 apply_bin_table_filters <- function(df, filters, input) {
+  # Chromosome filter. NULL (not yet rendered client-side) leaves df
+  # untouched; an empty selection (user unchecked every chromosome) yields
+  # zero rows, since %in% against character(0) matches nothing.
+  chr_selected <- input[["binfilter_chr"]]
+  if (!is.null(chr_selected)) {
+    df <- df[as.character(df$chr) %in% chr_selected, , drop = FALSE]
+  }
+  
   for (f in filters) {
     threshold <- input[[paste0("binfilter_", f$id)]]
     if (is.null(threshold)) next
@@ -551,6 +569,17 @@ ui <- page_sidebar(
             "Filter Bin Metrics"
           ),
           div(
+            style = "margin-top: 14px; margin-bottom: 4px;",
+            tags$span(
+              style = "font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #6c757d;",
+              "Chromosome"
+            ),
+            div(
+              style = "background: #f7f9fa; border: 1px solid #e7ecef; border-radius: 8px; padding: 10px 12px; margin-top: 6px;",
+              checkboxGroupInput("binfilter_chr", label = NULL, choices = chrom_list, selected = chrom_list, inline = TRUE)
+            )
+          ),
+          div(
             style = "display: flex; flex-wrap: wrap; gap: 16px; margin-top: 14px; align-items: center;",
             build_bin_table_filter_inputs(bin_table_filters, bin_table)
           )
@@ -951,20 +980,20 @@ server <- function(input, output, session) {
   
   # Sample x bin matrix of raw methylation for the currently selected bins, used by PCA/UMAP.
   projection_matrix <- reactive({
-    })
+  })
   
   # Patient x bin matrix of methylation shift (Tumor - Normal) for the selected bins, used by the network plot
   patient_shift_matrix <- reactive({
- })
+  })
   
   output$tn_density <- renderPlot({
-})
+  })
   
   output$tn_projection <- renderPlotly({
-})
+  })
   
   output$tn_network <- renderPlot({
-})
+  })
   
   # 4. Genome-wide Profile
   output$manhattan_plot <- renderPlotly({
