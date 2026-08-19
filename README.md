@@ -31,7 +31,7 @@ The app loads a single pre-processed data object (`data_app.rds`) containing:
 - A per-bin table with methylation summary statistics and annotation columns.
 - Long-format methylation values used for the exploratory plots.
 
-This data object is generated upstream from the project's raw data, using the following processing scripts, which must be run **in this order** before the app is run:
+This data object is generated upstream from the project's raw data, using the following processing scripts, which must be run **in the following order** before the app is run:
 
 1. `Alus_and_CpGs.R`
 2. `Week_2_With_Prevalence.R`
