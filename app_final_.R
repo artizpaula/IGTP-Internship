@@ -16,7 +16,7 @@ bin_table <- data$bin_table
 methylation_long <- data$methylation_long
 chrom_list <- c(as.character(1:22), "X", "Y")
 
-# Ordered bin choices for the bin-selector (grouped by chromosome, sorted by position)
+# Ordered bin choices for the bin-selector (grouped by chromosome and sorted by position)
 bin_table <- bin_table[order(match(bin_table$chr, chrom_list), bin_table$bin_position), ]
 bin_choices_by_chr <- split(bin_table$bin_id, factor(bin_table$chr, levels = chrom_list))
 
@@ -63,8 +63,6 @@ bin_table_columns <- list(
   list(id = "n_cpg", label = "CpG Count"))
 
 # Numeric metrics exposed as filters
-# "step" controls the slider granularity: 0.01 for continuous methylation
-# metrics, 1 for integer counts (CpG sites, Alu elements).
 bin_table_filters <- list(
   list(id = "mean_methylation_tumor", label = "Mean Meth (Tumor)", op = ">=", step = 0.01),
   list(id = "mean_methylation_normal", label = "Mean Meth (Normal)", op = ">=", step = 0.01),
@@ -106,9 +104,6 @@ build_bin_table_filter_inputs <- function(filters, df) {
 
 # Applies all configured filters to a bin_table subset
 apply_bin_table_filters <- function(df, filters, input) {
-  # Chromosome filter. NULL (not yet rendered client-side) leaves df
-  # untouched; an empty selection (user unchecked every chromosome) yields
-  # zero rows, since %in% against character(0) matches nothing.
   chr_selected <- input[["binfilter_chr"]]
   if (!is.null(chr_selected)) {
     df <- df[as.character(df$chr) %in% chr_selected, , drop = FALSE]
