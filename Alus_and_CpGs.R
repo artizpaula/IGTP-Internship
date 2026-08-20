@@ -105,7 +105,8 @@ summarize_bins <- function(dt, bin_size = 1e6) {
   out <- merge(out, alu_bin_means, by = c("chr", "bin_start", "bin_end"), all.x = TRUE)
   setcolorder(out, c("chr", "bin_start", "bin_end", "n_CpGs", "n_Alus", "mean_meth", "sum_meth", "pct_meth"))
   
-  # NaN (e.g. 0/0 when no meth values are available) reads more clearly as NA
+  # NaN
+  
   out[is.nan(mean_meth), mean_meth := NA_real_]
   out[is.nan(pct_meth), pct_meth := NA_real_]
   setorder(out, chr, bin_start)
