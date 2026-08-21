@@ -3,13 +3,13 @@
 # (e.g. average methylation, tumor-normal difference, associated genes,
 # functional annotations, prevalence data) prior to starting the application generation.
 
-# Missing: functional and gene annotations
+# Missing: functional and gene annotation
 
-library(jsonlite) # JSON reading
+library(jsonlite)   # JSON reading
 library(data.table) # fast reading/aggregation of the large raw per-CpG methylation tables
 
 # CpG/Alu-per-bin counting functions used in section 5b below
-source("Alus_and_CpGs.R") # runs code from the other script in this one
+source("Alus_and_CpGs.R")
 
 # Directory paths (personal paths)
 # Paths
@@ -20,7 +20,7 @@ dataset_alus_cpgs <- "/Users/paulaartizduenas/Desktop/Project/Dataset/Alus_CpGs"
 # Directories
 metadata_dir <- file.path(dataset_metadata, "Metadata_all_runs_combined.csv")
 bins_dir <- file.path(dataset_bins, "counts_bins_norm_mean")
-output_dir <- file.path(dirname(dataset_metadata), "Data Processed")
+output_dir  <- file.path(dirname(dataset_metadata), "Data Processed")
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
 # 1. Metadata
@@ -165,15 +165,26 @@ if (length(raw_meth_files$tar_files) == 0 && length(raw_meth_files$flat_files) =
   cpg_alu_annotation <- aggregate_bin_annotation(cpg_alu_samples, fun = "max")
   write.csv(cpg_alu_annotation, file.path(output_dir, "CpG_Alu_bin_annotation.csv"), row.names = FALSE)
   
-  # Fill n_cpg / n_alu by matching on chr + bin_start + bin_end
+  # Fill n_cpg / n_alu / %methylation by matching on chr + bin_start + bin_end
   key_bins    <- paste(bin_annotation$chr, bin_annotation$bin_start, bin_annotation$bin_end)
   key_cpg_alu <- paste(cpg_alu_annotation$chr, cpg_alu_annotation$bin_start, cpg_alu_annotation$bin_end)
   idx <- match(key_bins, key_cpg_alu)
   bin_annotation$n_cpg <- cpg_alu_annotation$n_cpg[idx]
   bin_annotation$n_alu <- cpg_alu_annotation$n_alu[idx]
+  # mean_meth = per-Alu average %methylation (each Alu counted once); pct_meth = % of
+  # CpG-Alu observations that are methylated. See Alus_and_CpGs.R::summarize_bins().
+  bin_annotation$alu_methylation_pct <- cpg_alu_annotation$mean_meth[idx]
+  bin_annotation$cpg_methylation_pct <- cpg_alu_annotation$pct_meth[idx]
 }
 
-bin_annotation <- bin_annotation[, c("bin_id", "chr", "bin_position", "bin_start", "bin_end","n_cpg", "n_alu", "genes", "functional_annotation")]
+# Guard columns so the script still runs (with NA %methylation) if no raw
+# Alu/CpG files were found above.
+if (!"alu_methylation_pct" %in% names(bin_annotation)) bin_annotation$alu_methylation_pct <- NA_real_
+if (!"cpg_methylation_pct" %in% names(bin_annotation)) bin_annotation$cpg_methylation_pct <- NA_real_
+
+bin_annotation <- bin_annotation[, c("bin_id", "chr", "bin_position", "bin_start", "bin_end",
+                                     "n_cpg", "n_alu", "alu_methylation_pct", "cpg_methylation_pct",
+                                     "genes", "functional_annotation")]
 write.csv(bin_annotation, file.path(output_dir, "Bin_annotation_template.csv"), row.names = FALSE)
 
 # 6. Tumor/Normal pairing and paired differences
@@ -309,7 +320,8 @@ bin_table <- bin_table[, c(
   "bin_id", "chr", "bin_position", "bin_start", "bin_end", "bin_status",
   "mean_methylation_tumor", "mean_methylation_normal", 
   "sd_methylation_tumor", "sd_methylation_normal", "tumor_normal_diff",
-  "n_cpg", "n_alu", "genes", "functional_annotation",
+  "n_cpg", "n_alu", "alu_methylation_pct", "cpg_methylation_pct",
+  "genes", "functional_annotation",
   "n_present_Normal", "n_present_Tumor", "n_total_Normal", "n_total_Tumor",
   "prevalence_tumor", "prevalence_normal",
   "n_samples_total", "n_present_total", "prevalence_total")]
