@@ -3,8 +3,7 @@
 
 # 1. Reading + format auto-detection
 
-# reads one raw methylation table and figures out on its own whether it's the
-# standard layout or the run134 layout
+# reads one raw methylation table and figures out on its own whether it's the standard layout or the run134 layout
 read_methylation_table <- function(filepath) {
   
   first_line <- readLines(filepath, n = 1L, warn = FALSE)
@@ -101,8 +100,7 @@ summarize_bins <- function(dt, bin_size = 1e6) {
     pct_meth  = 100 * sum(!is.na(meth) & meth > 0) / sum(!is.na(meth)) # % of CpG-Alu observations with a positive methylation value
   ), by = .(chr, bin_start, bin_end)]
   
-  # step 3: bin's mean_meth = average of each Alu's own average, so every Alu counts once no matter how many CpGs it has
-  # (Alu A 76.7%, Alu B 30% -> bin = (76.7+30)/2 = 53.3%)
+  # step 3: bin's mean_meth = average of each Alu's own average, so every Alu counts once no matter how many CpGs it has (Alu A 76.7%, Alu B 30% -> bin = (76.7+30)/2 = 53.3%)
   alu_bin_means <- per_alu[, .(mean_meth = mean(alu_mean_meth, na.rm = TRUE)), by = .(chr, bin_start, bin_end)]
   bin_counts <- merge(bin_counts, alu_bin_means, by = c("chr", "bin_start", "bin_end"), all.x = TRUE)
   setcolorder(bin_counts, c("chr", "bin_start", "bin_end", "n_CpGs", "n_Alus", "mean_meth", "sum_meth", "pct_meth"))

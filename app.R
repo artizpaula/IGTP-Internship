@@ -54,37 +54,34 @@ if (!gene_annotation_present) {
     hit <- paths[file.exists(paths)]
     if (length(hit) > 0) hit[[1]] else NA_character_
   }
-  # candidate locations for the two source files the annotation needs, tried in order
+  # candidate location for the COSMIC census TSV, tried in order
   # (matches the "Archivo" folder layout used by Week_2_With_Prevalence.R)
   cosmic_tsv_path <- find_first_existing(c(
     "Archivo/Cosmic_CancerGeneCensus_Tsv_v101_GRCh37/Cosmic_CancerGeneCensus_v101_GRCh37.tsv",
     "../Archivo/Cosmic_CancerGeneCensus_Tsv_v101_GRCh37/Cosmic_CancerGeneCensus_v101_GRCh37.tsv",
     "Data/Archivo/Cosmic_CancerGeneCensus_Tsv_v101_GRCh37/Cosmic_CancerGeneCensus_v101_GRCh37.tsv"
   ))
-  crc_gene_list_path <- find_first_existing(c(
-    "Archivo/CRC_curated_genes.txt",
-    "../Archivo/CRC_curated_genes.txt",
-    "Data/Archivo/CRC_curated_genes.txt"
-  ))
   gene_annotation_script <- find_first_existing(c(
-    "Gene_and_Functional_Annotation.R",
-    "../Gene_and_Functional_Annotation.R"
+    "Gene_Annotation.R",
+    "../Gene_Annotation.R"
   ))
   
-  if (!is.na(cosmic_tsv_path) && !is.na(crc_gene_list_path) && !is.na(gene_annotation_script)) {
+  if (!is.na(cosmic_tsv_path) && !is.na(gene_annotation_script)) {
     source(gene_annotation_script, local = TRUE)
-    gene_reference <- read_gene_reference(cosmic_tsv_path, crc_gene_list_path)
+    # full COSMIC Cancer Gene Census (all ~750 genes with coordinates), not just the curated
+    # CRC subset - so bins that overlap several census genes list all of them, not only one
+    gene_reference <- read_gene_reference(cosmic_tsv_path)
     gene_annotation_result <- annotate_bins_with_genes(bin_table, gene_reference)
     bin_table <- gene_annotation_result$bin_table
     # re-apply the same chromosome/position ordering used above, in case merge() reshuffled rows
     bin_table <- bin_table[order(match(bin_table$chr, chrom_list), bin_table$bin_position), ]
     message("Bin Table: gene annotation columns were missing from data_app.rds and have been ",
-            "recomputed on load from the COSMIC Cancer Gene Census + curated CRC gene list.")
+            "recomputed on load from the full COSMIC Cancer Gene Census.")
   } else {
-    warning("Bin Table: gene annotation source files not found (looked for the COSMIC census TSV, ",
-            "the curated CRC gene list, and Gene_and_Functional_Annotation.R next to app.R or one ",
-            "level up). Gene Count / Genes / Gene IDs will show as empty until data_app.rds is ",
-            "regenerated with gene annotation, or these files are made available alongside app.R.")
+    warning("Bin Table: gene annotation source file not found (looked for the COSMIC census TSV ",
+            "and Gene_Annotation.R next to app.R or one level up). Gene Count / Genes / Gene IDs ",
+            "will show as empty until data_app.rds is regenerated with gene annotation, or these ",
+            "files are made available alongside app.R.")
     if (!"gene_count" %in% names(bin_table)) bin_table$gene_count <- 0L
     if (!"gene_ids" %in% names(bin_table)) bin_table$gene_ids <- NA_character_
     if (!"gene_names" %in% names(bin_table)) bin_table$gene_names <- NA_character_
@@ -119,9 +116,9 @@ bin_table_columns <- list(
   list(id = "n_cpg",                  label = "CpG Count",           group = "Genomic Content"),
   list(id = "alu_methylation_pct",    label = "Alu Meth %",          group = "Genomic Content", digits = 2),
   list(id = "cpg_methylation_pct",    label = "CpG Meth %",          group = "Genomic Content", digits = 2),
-  list(id = "gene_count",             label = "Gene Count",          group = "Gene Annotation (COSMIC CRC census)"),
-  list(id = "gene_names",             label = "Genes",               group = "Gene Annotation (COSMIC CRC census)"),
-  list(id = "gene_ids",               label = "Gene IDs (COSMIC)",   group = "Gene Annotation (COSMIC CRC census)"))
+  list(id = "gene_count",             label = "Gene Count",          group = "Gene Annotation (COSMIC Cancer Gene Census)"),
+  list(id = "gene_names",             label = "Genes",               group = "Gene Annotation (COSMIC Cancer Gene Census)"),
+  list(id = "gene_ids",               label = "Gene IDs (COSMIC)",   group = "Gene Annotation (COSMIC Cancer Gene Census)"))
 
 # two-row header for the Bin Table DT
 bin_table_header_sketch <- local({
@@ -829,9 +826,9 @@ ui <- page_sidebar(
           div(
             style = "display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;",
             div(style = "display:flex; align-items:center; gap:8px;", bs_icon("table", size = "1.05em"), "Filterable Bin-level Data"),
-              uiOutput("bintable_count_badge")
-            )
-          ),
+            uiOutput("bintable_count_badge")
+          )
+        ),
         
         tags$details(
           open = "open",
@@ -1760,7 +1757,7 @@ server <- function(input, output, session) {
         color = styleInterval(0, c("#0e7c86", "#d1495b"))
       )
     }
-    # make bins that actually carry a curated CRC gene stand out from the (expected) majority with none
+    # make bins that carry one or more COSMIC cancer census genes stand out from the majority with none
     if ("Gene Count" %in% names(display_df)) {
       dt <- formatStyle(
         dt, "Gene Count",

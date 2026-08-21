@@ -4,10 +4,11 @@
 library(jsonlite)   # for reading the JSON files
 library(data.table) # fast reading/aggregation for the big raw per-CpG methylation tables
 
+setwd("/Users/paulaartizduenas/Desktop/Project/R Scripts")
 # CpG/Alu-per-bin counting functions, used in section 5b below
 source("Alus_and_CpGs.R")
 # gene annotation functions (bin <-> gene coordinate overlap), used in section 5c below
-source("Gene_and_Functional_Annotation.R")
+source("Gene_Annotation.R")
 
 # Directory paths (personal paths)
 # Paths
@@ -22,8 +23,7 @@ bins_dir <- file.path(dataset_bins, "counts_bins_norm_mean")
 output_dir  <- file.path(dirname(dataset_metadata), "Data Processed")
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
-# Gene annotation source files (from archive.zip: COSMIC Cancer Gene Census +
-# curated colorectal-cancer gene symbol list)
+# Gene annotation source file (from archive.zip: COSMIC Cancer Gene Census)
 cosmic_tsv_path    <- file.path(dataset_gene_annotation, "Cosmic_CancerGeneCensus_Tsv_v101_GRCh37", "Cosmic_CancerGeneCensus_v101_GRCh37.tsv")
 crc_gene_list_path <- file.path(dataset_gene_annotation, "CRC_curated_genes.txt")
 
@@ -187,17 +187,17 @@ if (length(raw_meth_files$tar_files) == 0 && length(raw_meth_files$flat_files) =
 if (!"alu_methylation_pct" %in% names(bin_annotation)) bin_annotation$alu_methylation_pct <- NA_real_
 if (!"cpg_methylation_pct" %in% names(bin_annotation)) bin_annotation$cpg_methylation_pct <- NA_real_
 
-# 5c. Gene annotation (COSMIC Cancer Gene Census, restricted to the curated
-# CRC gene list, matched to bins by coordinate overlap)
+# 5c. Gene annotation (full COSMIC Cancer Gene Census, matched to bins by coordinate
+# overlap - every census gene that overlaps a bin is listed, not just one)
 
-if (!file.exists(cosmic_tsv_path) || !file.exists(crc_gene_list_path)) {
-  warning("Gene annotation source file(s) not found (looked for ", cosmic_tsv_path,
-          " and ", crc_gene_list_path, "); bin_annotation$gene_count/gene_ids/gene_names will be empty.")
+if (!file.exists(cosmic_tsv_path)) {
+  warning("Gene annotation source file not found (looked for ", cosmic_tsv_path,
+          "); bin_annotation$gene_count/gene_ids/gene_names will be empty.")
   bin_annotation$gene_count <- 0L
   bin_annotation$gene_ids <- NA_character_
   bin_annotation$gene_names <- NA_character_
 } else {
-  gene_reference <- read_gene_reference(cosmic_tsv_path, crc_gene_list_path)
+  gene_reference <- read_gene_reference(cosmic_tsv_path) # full census; all associated genes per bin, not just the curated CRC subset
   gene_annotation_result <- annotate_bins_with_genes(bin_annotation, gene_reference)
   bin_annotation <- gene_annotation_result$bin_table
   validate_gene_bin_annotation(bin_annotation, gene_reference, gene_annotation_result$gene_hits)

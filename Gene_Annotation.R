@@ -1,7 +1,7 @@
 # Week 4
 # Gene annotation: match Cancer Gene Census (COSMIC) coordinates
 
-read_gene_reference <- function(cosmic_tsv_path, crc_gene_list_path) {
+read_gene_reference <- function(cosmic_tsv_path, crc_gene_list_path = NULL) {
   cosmic <- read.delim(cosmic_tsv_path, sep = "\t", stringsAsFactors = FALSE,
                        check.names = FALSE, quote = "")
   required_cols <- c("GENE_SYMBOL", "COSMIC_GENE_ID", "CHROMOSOME", "GENOME_START", "GENOME_STOP")
@@ -15,14 +15,22 @@ read_gene_reference <- function(cosmic_tsv_path, crc_gene_list_path) {
   cosmic$GENOME_START <- suppressWarnings(as.numeric(cosmic$GENOME_START))
   cosmic$GENOME_STOP  <- suppressWarnings(as.numeric(cosmic$GENOME_STOP))
   
-  crc_genes <- readLines(crc_gene_list_path, warn = FALSE)
-  crc_genes <- trimws(crc_genes)
-  crc_genes <- crc_genes[nzchar(crc_genes)]
-  if (length(crc_genes) > 0 && toupper(crc_genes[1]) == "GENE") crc_genes <- crc_genes[-1] # drop header row if there is one
-  crc_genes <- unique(toupper(crc_genes))
+  use_curated_subset <- !is.null(crc_gene_list_path) && !is.na(crc_gene_list_path) &&
+    nzchar(crc_gene_list_path)
+  
+  if (use_curated_subset) {
+    wanted_genes <- readLines(crc_gene_list_path, warn = FALSE)
+    wanted_genes <- trimws(wanted_genes)
+    wanted_genes <- wanted_genes[nzchar(wanted_genes)]
+    if (length(wanted_genes) > 0 && toupper(wanted_genes[1]) == "GENE") wanted_genes <- wanted_genes[-1] # drop header row if there is one
+    wanted_genes <- unique(toupper(wanted_genes))
+  } else {
+    # full census: every distinct gene symbol in the COSMIC table
+    wanted_genes <- unique(toupper(cosmic$GENE_SYMBOL))
+  }
   
   cosmic_upper <- toupper(cosmic$GENE_SYMBOL)
-  matched_idx  <- match(crc_genes, cosmic_upper)
+  matched_idx  <- match(wanted_genes, cosmic_upper)
   
   found <- !is.na(matched_idx)
   has_coords <- found
@@ -50,8 +58,8 @@ read_gene_reference <- function(cosmic_tsv_path, crc_gene_list_path) {
   }
   
   attr(gene_reference, "skipped_genes") <- list(
-    not_in_census       = crc_genes[!found],
-    missing_coordinates = crc_genes[found & !has_coords]
+    not_in_census       = wanted_genes[!found],
+    missing_coordinates = wanted_genes[found & !has_coords]
   )
   
   gene_reference
@@ -161,11 +169,11 @@ validate_gene_bin_annotation <- function(bin_table, gene_reference, gene_hits) {
             "(check bin coverage for that region): ", paste(unmatched_genes, collapse = ", "))
   }
   if (!is.null(skipped) && length(skipped$not_in_census) > 0) {
-    message("CRC-curated gene(s) not found in the COSMIC census (skipped): ",
+    message("Gene(s) requested but not found in the COSMIC census (skipped): ",
             paste(skipped$not_in_census, collapse = ", "))
   }
   if (!is.null(skipped) && length(skipped$missing_coordinates) > 0) {
-    message("CRC-curated gene(s) found in the census but missing coordinates (skipped): ",
+    message("Gene(s) found in the census but missing coordinates (skipped): ",
             paste(skipped$missing_coordinates, collapse = ", "))
   }
   
