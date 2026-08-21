@@ -94,9 +94,9 @@ summarize_bins <- function(dt, bin_size = 1e6) {
   
   # Step 2: bin-level counts/sums, still computed per CpG-Alu observation
   out <- dt[has_cpg, .(
-    n_CpGs    = .N, # every row in the bin with a non-empty CpG entry counts once, i.e. once per CpG-Alu association (a CpG in 2 Alus counts twice)
-    n_Alus    = uniqueN(alu_region[!is.na(alu_region) & nzchar(alu_region)]), # distinct alu regions touched in the bin (does not affect n_CpGs/meth stats above)
-    sum_meth  = sum(meth, na.rm = TRUE),  # total methylation signal across every individual CpG-Alu observation
+    n_CpGs = .N, # every row in the bin with a non-empty CpG entry counts once, i.e. once per CpG-Alu association (a CpG in 2 Alus counts twice)
+    n_Alus = uniqueN(alu_region[!is.na(alu_region) & nzchar(alu_region)]), # distinct alu regions touched in the bin (does not affect n_CpGs/meth stats above)
+    sum_meth = sum(meth, na.rm = TRUE),  # total methylation signal across every individual CpG-Alu observation
     pct_meth  = 100 * sum(!is.na(meth) & meth > 0) / sum(!is.na(meth)) # % of CpG-Alu observations with a positive methylation value
   ), by = .(chr, bin_start, bin_end)]
   
@@ -105,7 +105,7 @@ summarize_bins <- function(dt, bin_size = 1e6) {
   out <- merge(out, alu_bin_means, by = c("chr", "bin_start", "bin_end"), all.x = TRUE)
   setcolorder(out, c("chr", "bin_start", "bin_end", "n_CpGs", "n_Alus", "mean_meth", "sum_meth", "pct_meth"))
   
-  # NaN
+  # NaN 
   
   out[is.nan(mean_meth), mean_meth := NA_real_]
   out[is.nan(pct_meth), pct_meth := NA_real_]
