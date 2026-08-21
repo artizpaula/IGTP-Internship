@@ -830,14 +830,6 @@ ui <- page_sidebar(
           div(
             style = "display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;",
             div(style = "display:flex; align-items:center; gap:8px;", bs_icon("table", size = "1.05em"), "Filterable Bin-level Data"),
-            div(
-              style = "display:flex; align-items:center; gap:10px;",
-              actionButton(
-                "toggle_bintable_sidebar", "Hide sidebar",
-                icon = bs_icon("layout-sidebar-inset"),
-                class = "btn-sm btn-outline-secondary",
-                title = "Collapse the left Data Selection sidebar to give this table more room."
-              ),
               uiOutput("bintable_count_badge")
             )
           )
@@ -1007,19 +999,6 @@ server <- function(input, output, session) {
       } else 0
       updateSliderInput(session, paste0("binfilter_", f$id), value = lo)
     }
-  })
-  
-  # lets people collapse the left "Data Selection" sidebar while on the Bin Table tab
-  bintable_sidebar_open <- reactiveVal(TRUE)
-  observeEvent(input$toggle_bintable_sidebar, {
-    now_open <- !bintable_sidebar_open()
-    bintable_sidebar_open(now_open)
-    sidebar_toggle("main_sidebar", open = now_open, session = session)
-    updateActionButton(
-      session, "toggle_bintable_sidebar",
-      label = if (now_open) "Hide sidebar" else "Show sidebar",
-      icon = bs_icon(if (now_open) "layout-sidebar-inset" else "layout-sidebar-inset-reverse")
-    )
   })
   
   # Bin Table tab has its own filter panel
