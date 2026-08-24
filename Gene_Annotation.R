@@ -40,25 +40,23 @@ read_gene_reference <- function(cosmic_tsv_path, crc_gene_list_path = NULL) {
   usable <- found & has_coords
   ref_idx <- matched_idx[usable]
   
-  gene_reference <- data.frame(
-    gene_id    = cosmic$COSMIC_GENE_ID[ref_idx],
-    gene_name  = cosmic$GENE_SYMBOL[ref_idx],
-    chr        = cosmic$CHROMOSOME[ref_idx],
+  gene_reference <- data.frame(gene_id = cosmic$COSMIC_GENE_ID[ref_idx],
+    gene_name = cosmic$GENE_SYMBOL[ref_idx],
+    chr= cosmic$CHROMOSOME[ref_idx],
     gene_start = cosmic$GENOME_START[ref_idx],
-    gene_end   = cosmic$GENOME_STOP[ref_idx],
-    stringsAsFactors = FALSE
-  )
+    gene_end  = cosmic$GENOME_STOP[ref_idx],
+    stringsAsFactors = FALSE)
   
   # Guard against reversed start/end so the overlap rule (which assumes gene_start <= gene_end) always holds
   swap <- gene_reference$gene_start > gene_reference$gene_end
   if (any(swap)) {
     tmp <- gene_reference$gene_start[swap]
     gene_reference$gene_start[swap] <- gene_reference$gene_end[swap]
-    gene_reference$gene_end[swap]   <- tmp
+    gene_reference$gene_end[swap] <- tmp
   }
   
   attr(gene_reference, "skipped_genes") <- list(
-    not_in_census       = wanted_genes[!found],
+    not_in_census = wanted_genes[!found],
     missing_coordinates = wanted_genes[found & !has_coords]
   )
   
@@ -96,21 +94,17 @@ annotate_bins_with_genes <- function(bin_table, gene_reference, id_sep = ";") {
     per_bin <- aggregate(gene_name ~ bin_id, data = gene_hits,
                          FUN = function(x) length(unique(x)))
     names(per_bin)[2] <- "gene_count"
-    
     ids_per_bin <- aggregate(gene_id ~ bin_id, data = gene_hits,
                              FUN = function(x) paste(sort(unique(x)), collapse = id_sep))
     names(ids_per_bin)[2] <- "gene_ids"
-    
     names_per_bin <- aggregate(gene_name ~ bin_id, data = gene_hits,
                                FUN = function(x) paste(sort(unique(x)), collapse = id_sep))
     names(names_per_bin)[2] <- "gene_names"
-    
     gene_summary <- Reduce(function(a, b) merge(a, b, by = "bin_id", all = TRUE),
                            list(per_bin, ids_per_bin, names_per_bin))
   } else {
     gene_summary <- data.frame(bin_id = character(0), gene_count = integer(0),
-                               gene_ids = character(0), gene_names = character(0))
-  }
+                               gene_ids = character(0), gene_names = character(0))}
   
   # drop any old/stale versions of these columns before merging in the new ones
   bin_table$gene_count <- NULL
@@ -123,7 +117,6 @@ annotate_bins_with_genes <- function(bin_table, gene_reference, id_sep = ";") {
   # gene_ids / gene_names stay NA on purpose for bins with no matching gene
   
   bin_table$genes <- bin_table$gene_names
-  
   list(bin_table = bin_table, gene_hits = gene_hits)
 }
 
@@ -177,9 +170,5 @@ validate_gene_bin_annotation <- function(bin_table, gene_reference, gene_hits) {
             paste(skipped$missing_coordinates, collapse = ", "))
   }
   
-  invisible(list(
-    n_bins = n_bins, n_bins_with_gene = n_bins_with_gene,
-    n_reference_genes = n_ref_genes, n_matched_genes = length(matched_genes),
-    unmatched_genes = unmatched_genes, skipped_genes = skipped
-  ))
+  invisible(list(n_bins = n_bins, n_bins_with_gene = n_bins_with_gene,n_reference_genes = n_ref_genes, n_matched_genes = length(matched_genes), unmatched_genes = unmatched_genes, skipped_genes = skipped))
 }

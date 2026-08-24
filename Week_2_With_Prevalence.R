@@ -37,8 +37,7 @@ if (ncol(metadata) <= 1) stop("Only 1 column detected - delimiter is wrong.")
 # 1.2 NA handling: NA means not tested, so it has to stay "unknown", never treated as wild-type/0
 mutation_cols <- c("KRAS", "BRAF", "TP53")
 for (col in mutation_cols) {
-  metadata[[col]] <- ifelse(is.na(metadata[[col]]), "unknown", as.character(metadata[[col]]))
-} 
+  metadata[[col]] <- ifelse(is.na(metadata[[col]]), "unknown", as.character(metadata[[col]]))} 
 
 # normalize id for joining later (files on disk mix "run.." / "Run.." casing)
 metadata$sample_id <- tolower(trimws(metadata$Sample))
@@ -115,19 +114,18 @@ write.csv(methylation_long, file.path(output_dir, "Methylation_long.csv"), row.n
 n_samples_per_bin <- aggregate(
   list(n_samples = rep(1L, nrow(methylation_long))),
   by = list(chr = methylation_long$chr, bin_position = methylation_long$bin_position),
-  FUN = sum
+  FUN= sum
 )
 n_na_per_bin <- aggregate(
   list(n_na = as.integer(is.na(methylation_long$methylation))),
   by = list(chr = methylation_long$chr, bin_position = methylation_long$bin_position),
-  FUN = sum
+  FUN= sum
 )
 bin_na_summary <- merge(n_samples_per_bin, n_na_per_bin, by = c("chr", "bin_position"))
 
 # distinguish biological absence from sample-specific missing values:
 # complete = no NAs at all, sample_specific_missing = missing only in some samples, structural_gap = missing in every sample
-bin_na_summary$bin_status <- ifelse(
-  bin_na_summary$n_na == 0, "complete",
+bin_na_summary$bin_status <- ifelse(bin_na_summary$n_na == 0, "complete",
   ifelse(bin_na_summary$n_na == bin_na_summary$n_samples, "structural_gap", "sample_specific_missing")
 )
 
@@ -162,16 +160,12 @@ raw_meth_files <- list_raw_methylation_files(dataset_alus_cpgs)
 if (length(raw_meth_files$tar_files) == 0 && length(raw_meth_files$flat_files) == 0) {
   warning("No raw methylation files found in ", dataset_alus_cpgs)
 } else {
-  cpg_alu_samples <- process_all_raw_methylation(
-    input_dir  = dataset_alus_cpgs,
-    output_dir = cpg_alu_dir,
-    bin_size   = 1e6
-  )
+  cpg_alu_samples <- process_all_raw_methylation(input_dir  = dataset_alus_cpgs,output_dir = cpg_alu_dir, bin_size   = 1e6)
   cpg_alu_annotation <- aggregate_bin_annotation(cpg_alu_samples, fun = "max")
   write.csv(cpg_alu_annotation, file.path(output_dir, "CpG_Alu_bin_annotation.csv"), row.names = FALSE)
   
   # fill in n_cpg / n_alu / %methylation by matching on chr + bin_start + bin_end
-  key_bins    <- paste(bin_annotation$chr, bin_annotation$bin_start, bin_annotation$bin_end)
+  key_bins <- paste(bin_annotation$chr, bin_annotation$bin_start, bin_annotation$bin_end)
   key_cpg_alu <- paste(cpg_alu_annotation$chr, cpg_alu_annotation$bin_start, cpg_alu_annotation$bin_end)
   idx <- match(key_bins, key_cpg_alu)
   bin_annotation$n_cpg <- cpg_alu_annotation$n_cpg[idx]
@@ -182,13 +176,11 @@ if (length(raw_meth_files$tar_files) == 0 && length(raw_meth_files$flat_files) =
   bin_annotation$cpg_methylation_pct <- cpg_alu_annotation$pct_meth[idx]
 }
 
-# guard columns so the script still runs (with NA %methylation) if no raw
-# Alu/CpG files were found above
+# guard columns so the script still runs (with NA %methylation) if no raw Alu/CpG files were found above
 if (!"alu_methylation_pct" %in% names(bin_annotation)) bin_annotation$alu_methylation_pct <- NA_real_
 if (!"cpg_methylation_pct" %in% names(bin_annotation)) bin_annotation$cpg_methylation_pct <- NA_real_
 
 # 5c. Gene annotation (full COSMIC Cancer Gene Census, matched to bins by coordinate
-# overlap - every census gene that overlaps a bin is listed, not just one)
 
 if (!file.exists(cosmic_tsv_path)) {
   warning("Gene annotation source file not found (looked for ", cosmic_tsv_path,
@@ -204,10 +196,7 @@ if (!file.exists(cosmic_tsv_path)) {
   write.csv(gene_annotation_result$gene_hits, file.path(output_dir, "Gene_bin_overlaps.csv"), row.names = FALSE)
 }
 
-bin_annotation <- bin_annotation[, c("bin_id", "chr", "bin_position", "bin_start", "bin_end",
-                                     "n_cpg", "n_alu", "alu_methylation_pct", "cpg_methylation_pct",
-                                     "gene_count", "gene_ids", "gene_names",
-                                     "genes", "functional_annotation")]
+bin_annotation <- bin_annotation[, c("bin_id", "chr", "bin_position", "bin_start", "bin_end", "n_cpg", "n_alu", "alu_methylation_pct", "cpg_methylation_pct", "gene_count", "gene_ids", "gene_names", "genes", "functional_annotation")]
 write.csv(bin_annotation, file.path(output_dir, "Bin_annotation_template.csv"), row.names = FALSE)
 
 # 6. Tumor/Normal pairing and paired differences
@@ -243,12 +232,12 @@ merged$Type <- as.character(merged$Type)
 n_present_long <- aggregate(
   list(n_present = as.integer(!is.na(merged$methylation))), # samples that actually have a methylation value
   by = list(chr = merged$chr, bin_position = merged$bin_position, Type = merged$Type),
-  FUN = sum
+  FUN= sum
 )
 n_total_long <- aggregate(
   list(n_total = rep(1L, nrow(merged))),
   by = list(chr = merged$chr, bin_position = merged$bin_position, Type = merged$Type),
-  FUN = sum
+  FUN= sum
 )
 presence_long <- merge(n_present_long, n_total_long, by = c("chr", "bin_position", "Type"))
 
@@ -275,8 +264,8 @@ prevalence_summary <- data.frame(
   n_present_Tumor = presence_summary$n_present_Tumor,
   n_total_Normal = presence_summary$n_total_Normal,
   n_total_Tumor = presence_summary$n_total_Tumor,
-  stringsAsFactors = FALSE
-)
+  stringsAsFactors = FALSE)
+
 # fraction of Tumor samples with a non-NA methylation value at that bin
 prevalence_summary$prevalence_tumor <- ifelse(
   prevalence_summary$n_total_Tumor > 0,
@@ -304,15 +293,14 @@ write.csv(prevalence_summary, file.path(output_dir, "Bin_prevalence_detection.cs
 
 # 8.1 Mean and SD computation
 mean_sd_summary <- aggregate(
-  list(
-    mean_methylation_tumor  = paired_diff$Tumor,
+  list(mean_methylation_tumor  = paired_diff$Tumor,
     mean_methylation_normal = paired_diff$Normal,
     sd_methylation_tumor = paired_diff$Tumor,
     sd_methylation_normal = paired_diff$Normal,
     tumor_normal_diff = paired_diff$diff
   ),
   by = list(chr = paired_diff$chr, bin_position = paired_diff$bin_position),
-  FUN = function(x) c(mean = mean(x, na.rm = TRUE), sd = sd(x, na.rm = TRUE))
+  FUN= function(x) c(mean = mean(x, na.rm = TRUE), sd = sd(x, na.rm = TRUE))
 )
 
 bin_methylation_summary <- data.frame(
@@ -339,8 +327,7 @@ bin_table <- merge(bin_table, bin_methylation_summary_no_keys, by = "bin_id", al
 bin_table <- merge(bin_table, prevalence_summary, by = c("chr", "bin_position"), all.x = TRUE, sort = FALSE)
 
 # 8.3 SD included in the final table
-bin_table <- bin_table[, c(
-  "bin_id", "chr", "bin_position", "bin_start", "bin_end", "bin_status",
+bin_table <- bin_table[, c("bin_id", "chr", "bin_position", "bin_start", "bin_end", "bin_status",
   "mean_methylation_tumor", "mean_methylation_normal", 
   "sd_methylation_tumor", "sd_methylation_normal", "tumor_normal_diff",
   "n_cpg", "n_alu", "alu_methylation_pct", "cpg_methylation_pct",
@@ -352,7 +339,4 @@ bin_table <- bin_table[, c(
 write.csv(bin_table, file.path(output_dir, "Bin_table.csv"), row.names = FALSE)
 
 # RDS with the full table, this is what app.R actually loads
-saveRDS(
-  list(metadata = metadata, methylation_long = methylation_long, bin_table = bin_table),
-  file.path(output_dir, "data_app.rds")
-)
+saveRDS(list(metadata = metadata, methylation_long = methylation_long, bin_table = bin_table), file.path(output_dir, "data_app.rds"))
