@@ -9,7 +9,7 @@ library(plotly)
 library(ggplot2)
 library(patchwork) # aligns the annotation strip + heatmap with independent legends
 
-data <- readRDS("/Users/paulaartizduenas/Desktop/Project/Dataset/Data Processed/data_app.rds") # Change with own pathway where "data_app.rds" is located
+data <- readRDS("data_app.rds") # data_app.rds must be in the same folder as app.R
 
 metadata <- data$metadata
 bin_table <- data$bin_table
