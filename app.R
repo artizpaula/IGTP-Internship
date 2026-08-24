@@ -9,7 +9,7 @@ library(plotly)
 library(ggplot2)
 library(patchwork) # aligns the annotation strip + heatmap with independent legends
 
-data <- readRDS("/Users/paulaartizduenas/Desktop/Project/Dataset/Data Processed/data_app.rds")
+data <- readRDS("/Users/paulaartizduenas/Desktop/Project/Dataset/Data Processed/data_app.rds") # Change with own pathway where "data_app.rds" is located
 
 metadata <- data$metadata
 bin_table <- data$bin_table
@@ -17,7 +17,7 @@ methylation_long <- data$methylation_long
 chrom_list <- c(as.character(1:22), "X", "Y")
 
 # bin choices for the sidebar dropdown, grouped by chromosome and sorted by position
-bin_table <- bin_table[order(match(bin_table$chr, chrom_list), bin_table$bin_position), ]
+bin_table <- bin_table[order(match(bin_table$chr, chrom_list), bin_table$bin_position),]
 bin_choices_by_chr <- split(bin_table$bin_id, factor(bin_table$chr, levels = chrom_list))
 
 # Bin Table tab: extra columns we need + a couple of lookup tables
@@ -54,8 +54,7 @@ if (!gene_annotation_present) {
     hit <- paths[file.exists(paths)]
     if (length(hit) > 0) hit[[1]] else NA_character_
   }
-  # candidate location for the COSMIC census TSV, tried in order
-  # (matches the "Archivo" folder layout used by Week_2_With_Prevalence.R)
+  # Candidate location for the COSMIC census TSV, tried in order (matches the "Archivo" folder layout used by Week_2_With_Prevalence.R)
   cosmic_tsv_path <- find_first_existing(c(
     "Archivo/Cosmic_CancerGeneCensus_Tsv_v101_GRCh37/Cosmic_CancerGeneCensus_v101_GRCh37.tsv",
     "../Archivo/Cosmic_CancerGeneCensus_Tsv_v101_GRCh37/Cosmic_CancerGeneCensus_v101_GRCh37.tsv",
@@ -105,20 +104,20 @@ if (!"cpg_methylation_pct" %in% names(bin_table)) {
 
 # columns to show in the Bin Table tab, in the order we want them
 bin_table_columns <- list(
-  list(id = "bin_id",                 label = "Bin ID",              group = "Bin"),
-  list(id = "bin_coordinates",        label = "Coordinates",         group = "Bin"),
-  list(id = "mean_methylation_tumor", label = "Tumor Mean",          group = "Methylation (\u03b2-value)", digits = 3),
-  list(id = "mean_methylation_normal",label = "Normal Mean",         group = "Methylation (\u03b2-value)", digits = 3),
-  list(id = "sd_methylation_tumor",   label = "Tumor SD",            group = "Methylation (\u03b2-value)", digits = 3),
-  list(id = "sd_methylation_normal",  label = "Normal SD",           group = "Methylation (\u03b2-value)", digits = 3),
+  list(id = "bin_id", label = "Bin ID", group = "Bin"),
+  list(id = "bin_coordinates", label = "Coordinates",group = "Bin"),
+  list(id = "mean_methylation_tumor", label = "Tumor Mean", group = "Methylation (\u03b2-value)", digits = 3),
+  list(id = "mean_methylation_normal",label = "Normal Mean", group = "Methylation (\u03b2-value)", digits = 3),
+  list(id = "sd_methylation_tumor",label = "Tumor SD", group = "Methylation (\u03b2-value)", digits = 3),
+  list(id = "sd_methylation_normal",label = "Normal SD", group = "Methylation (\u03b2-value)", digits = 3),
   list(id = "mean_diff_tumor_normal", label = "\u0394 (Tumor \u2212 Normal)", group = "Methylation (\u03b2-value)", digits = 3),
-  list(id = "n_alu",                  label = "Alu Count",           group = "Genomic Content"),
-  list(id = "n_cpg",                  label = "CpG Count",           group = "Genomic Content"),
-  list(id = "alu_methylation_pct",    label = "Alu Meth %",          group = "Genomic Content", digits = 2),
-  list(id = "cpg_methylation_pct",    label = "CpG Meth %",          group = "Genomic Content", digits = 2),
-  list(id = "gene_count",             label = "Gene Count",          group = "Gene Annotation (COSMIC Cancer Gene Census)"),
-  list(id = "gene_names",             label = "Genes",               group = "Gene Annotation (COSMIC Cancer Gene Census)"),
-  list(id = "gene_ids",               label = "Gene IDs (COSMIC)",   group = "Gene Annotation (COSMIC Cancer Gene Census)"))
+  list(id = "n_alu", label = "Alu Count", group = "Genomic Content"),
+  list(id = "n_cpg", label = "CpG Count", group = "Genomic Content"),
+  list(id = "alu_methylation_pct", label = "Alu Meth %",group = "Genomic Content", digits = 2),
+  list(id = "cpg_methylation_pct",label = "CpG Meth %", group = "Genomic Content", digits = 2),
+  list(id = "gene_count", label = "Gene Count",group = "Gene Annotation (COSMIC Cancer Gene Census)"),
+  list(id = "gene_names", label = "Genes", group = "Gene Annotation (COSMIC Cancer Gene Census)"),
+  list(id = "gene_ids", label = "Gene IDs (COSMIC)", group = "Gene Annotation (COSMIC Cancer Gene Census)"))
 
 # two-row header for the Bin Table DT
 bin_table_header_sketch <- local({
@@ -127,17 +126,13 @@ bin_table_header_sketch <- local({
   htmltools::withTags(table(
     class = "display",
     thead(
-      tr(
-        lapply(seq_along(group_rle$lengths), function(i) {
-          th(
-            colspan = group_rle$lengths[i],
+      tr(lapply(seq_along(group_rle$lengths), function(i) {
+          th(colspan = group_rle$lengths[i],
             style = "text-align:center; background:#eef2f5; color:#16324f; border-bottom:2px solid #d8e0e6; font-size:11.5px; text-transform:uppercase; letter-spacing:0.4px;",
-            group_rle$values[i]
-          )
+            group_rle$values[i])
         })
       ),
-      tr(
-        lapply(bin_table_columns, function(c) th(style = "white-space:nowrap;", c$label))
+      tr(lapply(bin_table_columns, function(c) th(style = "white-space:nowrap;", c$label))
       )
     )
   ))
@@ -180,8 +175,7 @@ build_bin_table_filter_inputs <- function(filters, df) {
         inputId = paste0("binfilter_", f$id),
         label = paste0(f$label, " ", f$op),
         min = lo, max = hi, value = lo, step = step,
-        width = "100%"
-      )
+        width = "100%")
     )
   })
 }
@@ -202,8 +196,7 @@ apply_bin_table_filters <- function(df, filters, input) {
     keep <- switch(f$op,
                    ">=" = !is.na(col) & col >= threshold,
                    ">"  = !is.na(col) & col >  threshold,
-                   rep(TRUE, nrow(df))
-    )
+                   rep(TRUE, nrow(df)))
     df <- df[keep, , drop = FALSE]
   }
   
@@ -253,8 +246,7 @@ genome_wide_bins <- bin_table
 genome_wide_bins$chr <- factor(genome_wide_bins$chr, levels = chrom_list)
 genome_wide_bins <- genome_wide_bins[order(genome_wide_bins$chr, genome_wide_bins$bin_position), ]
 genome_wide_bins$genome_x <- chr_offset[as.character(genome_wide_bins$chr)] + genome_wide_bins$bin_position
-genome_wide_bins$overall_meth <- rowMeans(
-  genome_wide_bins[, c("mean_methylation_tumor", "mean_methylation_normal")], na.rm = TRUE)
+genome_wide_bins$overall_meth <- rowMeans(genome_wide_bins[, c("mean_methylation_tumor", "mean_methylation_normal")], na.rm = TRUE)
 genome_wide_bins$chr_parity <- factor(as.integer(genome_wide_bins$chr) %% 2)
 
 # dashed lines marking where each chromosome starts, reused on both plots
@@ -280,8 +272,7 @@ patient_bin_shift$shift <- patient_bin_shift$meth_tumor - patient_bin_shift$meth
 patient_bin_shift$bin_id <- factor(patient_bin_shift$bin_id, levels = bin_table$bin_id)
 
 # genome-wide Tumor vs Normal significance testing 
-bin_stats <- aggregate(
-  shift ~ bin_id, data = patient_bin_shift,
+bin_stats <- aggregate(shift ~ bin_id, data = patient_bin_shift,
   FUN = function(x) c(mean = mean(x, na.rm = TRUE), sd = stats::sd(x, na.rm = TRUE), n = sum(is.finite(x)))
 )
 bin_stats <- do.call(data.frame, bin_stats)
@@ -319,8 +310,7 @@ genome_wide_bins$manhattan_category <- with(genome_wide_bins, {
          ifelse(sig & mean_diff_tumor_normal < 0, "Significant hypomethylation",
                 ifelse(outlier, "Extreme outlier", "Not significant")))
 })
-genome_wide_bins$manhattan_category <- factor(
-  genome_wide_bins$manhattan_category,
+genome_wide_bins$manhattan_category <- factor(genome_wide_bins$manhattan_category,
   levels = c("Not significant", "Extreme outlier", "Significant hypomethylation", "Significant hypermethylation")
 )
 
@@ -336,21 +326,21 @@ heatmap_feature_choices <- c(
   "Stage" = "estadi2"
 )
 
-# turns a 0/1 (or other two-level) coded column into readable labels
+# Turns a 0/1 (or other two-level) coded column into readable labels
 recode_binary <- function(x, labels = c("0" = "Wild-type", "1" = "Mutant")) {
   x_chr <- as.character(x)
   out <- ifelse(!is.na(x_chr) & x_chr %in% names(labels), labels[x_chr], x_chr)
   out
 }
 
-# short p-value label used on plot annotations across the app
+# Short p-value label used on plot annotations across the app
 format_pvalue <- function(p) {
   if (is.null(p) || !is.finite(p)) return("p = NA")
   if (p < 0.001) return("p < 0.001")
   paste0("p = ", format(round(p, 3), nsmall = 3))
 }
 
-# runs a Wilcoxon rank-sum test or Welch's t-test between two numeric vectors
+# Runs a Wilcoxon rank-sum test or Welch's t-test between two numeric vectors
 run_group_test <- function(x, y, method = c("wilcox", "ttest")) {
   method <- match.arg(method)
   x <- x[is.finite(x)]; y <- y[is.finite(y)]
@@ -416,7 +406,7 @@ clinical_profile_table <- merge(clinical_profile_table, patient_type_mean[, c("p
 clinical_profile_table <- merge(clinical_profile_table, sample_counts[, intersect(c("patient_id", "nTumorSamples", "nNormalSamples"), names(sample_counts))], by = "patient_id", all.x = TRUE)
 clinical_profile_table <- clinical_profile_table[order(as.numeric(suppressWarnings(clinical_profile_table$patient_id)), clinical_profile_table$patient_id), ]
 
-# nicer display names for the clinical table's columns; anything not listed here
+# Nicer display names for the clinical table's columns; anything not listed here
 clinical_column_labels <- c(
   patient_id = "Patient ID", sexe = "Sex", estadi2 = "Stage", MSS = "MSI/MSS Status",
   BRAF = "BRAF", KRAS = "KRAS", TP53 = "TP53", Recaiguda = "Relapse",
@@ -459,11 +449,10 @@ categorical_palette <- function(values) {
   setNames(base_palette[((seq_along(levels_now) - 1) %% length(base_palette)) + 1], levels_now)
 }
 
-# shared ggplot2 theme so every static plot in the app looks consistent
+# Shared ggplot2 theme so every static plot in the app looks consistent
 theme_app <- function(base_size = 12) {
   theme_minimal(base_size = base_size) +
-    theme(
-      plot.subtitle = element_text(size = rel(0.82), color = "#7d92a3", margin = margin(b = 10)),
+    theme(plot.subtitle = element_text(size = rel(0.82), color = "#7d92a3", margin = margin(b = 10)),
       plot.caption= element_text(size = rel(0.68), color = "#7d92a3", hjust = 0),
       axis.title = element_text(size = rel(0.88), color = "#16324f"),
       axis.text = element_text(size = rel(0.82), color = "#3a5470"),
@@ -680,71 +669,37 @@ zoom_view <- function(start, end, chr_len, factor, min_width = 2e6) {
 
 # UI Definition
 
-ui <- page_sidebar(
-  title = div(
-    style = "
-      display:flex;
-      justify-content:space-between;
-      align-items:center;
-      width:100%;
-      padding:18px 10px;
-      border-bottom:1px solid rgba(255,255,255,0.10);
-    ",
+ui <- page_sidebar(title = div(style = "display:flex; justify-content:space-between; align-items:center; width:100%; padding:18px 10px; border-bottom:1px solid rgba(255,255,255,0.10);",
     
     # Left side
-    div(
-      h2(
-        "Exploration of Epigenomic Data in Colorectal Cancer",
-        style = "
-          margin:0;
-          font-weight:600;
-          font-size:28px;
-          line-height:1.2;
-        "
-      ),
+    div(h2("Exploration of Epigenomic Data in Colorectal Cancer",style = "margin:0; font-weight:600; font-size:28px; line-height:1.2;"),
       
-      tags$div(
-        "Institut Germans Trias i Pujol (IGTP) · Universitat Politècnica de Catalunya (UPC)",
-        style = "
-          font-size:13px;
-          color:#9fb3c8;
-          margin-top:4px;
-        "
-      )
+      tags$div("Institut Germans Trias i Pujol (IGTP) · Universitat Politècnica de Catalunya (UPC)",
+        style = "font-size:13px; color:#9fb3c8; margin-top:4px;")
     ),
     
     # Right side
-    div(
-      style = "display:flex; gap:14px; align-items:center; margin-left:auto;",
+    div(style = "display:flex; gap:14px; align-items:center; margin-left:auto;",
       
-      div(
-        style = "display:flex; align-items:center; gap:8px; border:1px solid #3a5470; border-radius:8px; padding:8px 14px;",
+      div(style = "display:flex; align-items:center; gap:8px; border:1px solid #3a5470; border-radius:8px; padding:8px 14px;",
         bs_icon("person", size = "2em"),
-        textOutput("n_patients", inline = TRUE),
-        " patients"
-      ),
+        textOutput("n_patients", inline = TRUE)," patients"),
       
-      div(
-        style = "display:flex; align-items:center; gap:8px; border:1px solid #3a5470; border-radius:8px; padding:8px 14px;",
+      div(style = "display:flex; align-items:center; gap:8px; border:1px solid #3a5470; border-radius:8px; padding:8px 14px;",
         bs_icon("clipboard-data", size = "2em"),
-        textOutput("n_samples", inline = TRUE),
-        " samples"
-      )
+        textOutput("n_samples", inline = TRUE)," samples")
     )
   ),
-  theme = bs_theme(
-    version = 5,
+  theme = bs_theme(version = 5,
     base_font = font_google("IBM Plex Sans"),
     heading_font = font_google("Libre Franklin"),
     bg = "#f4f7f9", fg = "#0b2436",
     primary = "#0e7c86", secondary = "#16324f",
     success  = "#2fae66", info = "#3aa9c9", warning = "#e0a339", danger = "#d1495b",
     "navbar-bg"  = "#0b2436",
-    base_font_size_scale = 0.98
-  ),
+    base_font_size_scale = 0.98),
   
-  sidebar = sidebar(
-    width = 300,
+  sidebar = sidebar(width = 300,
     tags$div("DATA SELECTION", style = "font-size:14px; font-weight:700; letter-spacing:0.8px; color:#7d92a3; margin-bottom:0px;"),
     selectInput("chr", "Chromosome:", choices = chrom_list),
     selectizeInput("bins", "Selected bins:", choices = NULL, multiple = TRUE, options = list(placeholder = "Find and select bins (ex: 1_1000000)...", plugins = list("remove_button"))),
@@ -754,8 +709,7 @@ ui <- page_sidebar(
     tags$div("Accepts .csv/.tsv/.txt or a plain list of bin IDs like 1_1000000, one per line or comma-separated).", style = "font-size:11px; color:#7d92a3; margin-top:-10px; margin-bottom:8px;"),
     hr(style = "margin:1px 0; border-color:#3a5470;")),
   
-  navset_card_underline(
-    title = "Exploration and Visualization",
+  navset_card_underline(title = "Exploration and Visualization",
     
     # 1. Overview
     nav_panel("Overview", uiOutput("overview_content")),
@@ -769,20 +723,15 @@ ui <- page_sidebar(
     # 4. Genome-wide Profile
     nav_panel(
       "Genome-wide Profile",
-      div(
-        style = "font-size:13px; color:#6c757d; margin-bottom:10px;",
-        "Genome-wide comparison of Tumor and Normal methylation across all 1 Mb bins. Each point is a bin; a paired test (per patient, Tumor vs. Normal) flags bins that differ significantly (Benjamini-Hochberg adjusted q < 0.05), and bins in the top 5% by absolute difference are flagged as extreme outliers even when not significant. Hover a point for the bin, chromosome, difference, and q-value; drag to zoom, double-click to reset, and use the camera icon to export."
-      ),
+      div(style = "font-size:13px; color:#6c757d; margin-bottom:10px;","Genome-wide Tumor vs. Normal methylation across 1 Mb bins. Significant bins (BH q < 0.05) and top 5% extreme differences are flagged. Hover for details; drag to zoom, double-click to reset, and use the camera icon to export."),
       card(
         card_header("Manhattan-style plot: Tumor \u2212 Normal methylation difference"),
         plotlyOutput("manhattan_plot", height = "550px"),
-        div(
-          style = "display:flex; gap:20px; flex-wrap:wrap; margin-top:12px; padding-top:10px; border-top:1px solid #e3e8ec; font-size:12px; color:#3a5470;",
+        div(style = "display:flex; gap:20px; flex-wrap:wrap; margin-top:12px; padding-top:10px; border-top:1px solid #e3e8ec; font-size:12px; color:#3a5470;",
           tags$span(tags$span(style = "display:inline-block; width:10px; height:10px; border-radius:50%; background:#d1495b; margin-right:6px;"), "Significant hypermethylation (q < 0.05)"),
           tags$span(tags$span(style = "display:inline-block; width:10px; height:10px; border-radius:50%; background:#3aa9c9; margin-right:6px;"), "Significant hypomethylation (q < 0.05)"),
           tags$span(tags$span(style = "display:inline-block; width:10px; height:10px; border-radius:50%; background:#e0a339; margin-right:6px;"), "Extreme outlier (top 5% |\u0394|, not significant)"),
-          tags$span(tags$span(style = "display:inline-block; width:10px; height:10px; border-radius:50%; background:#b7c1c9; margin-right:6px;"), "Not significant")
-        )
+          tags$span(tags$span(style = "display:inline-block; width:10px; height:10px; border-radius:50%; background:#b7c1c9; margin-right:6px;"), "Not significant"))
       )
     ),
     
@@ -794,8 +743,7 @@ ui <- page_sidebar(
     # 6. Clinical Explorer
     nav_panel(
       "Clinical Explorer",
-      div(
-        style = "font-size:13px; color:#6c757d; margin-bottom:10px;",
+      div(style = "font-size:13px; color:#6c757d; margin-bottom:10px;",
         "Compare tumor methylation by mutation status, and cross-reference patients against their full clinical profile. Click a row in the table to highlight that patient in the plot; use the search box or column filters to narrow the table down."
       ),
       uiOutput("selected_patient_banner"),
@@ -803,8 +751,7 @@ ui <- page_sidebar(
         col_widths = c(5, 7),
         card(
           card_header("Methylation by mutation status"),
-          div(
-            style = "display:flex; flex-wrap:wrap; gap:18px; align-items:flex-end; margin-bottom:6px;",
+          div(style = "display:flex; flex-wrap:wrap; gap:18px; align-items:flex-end; margin-bottom:6px;",
             div(style = "min-width:160px;", selectInput("mutation_gene", "Gene:", choices = c("KRAS", "BRAF", "TP53"))),
             div(style = "min-width:220px;", radioButtons("mutation_stat_test", "Statistical test:", choices = c("Wilcoxon rank-sum" = "wilcox", "Welch's t-test" = "ttest"), selected = "wilcox", inline = TRUE))
           ),
@@ -823,8 +770,7 @@ ui <- page_sidebar(
       "Bin Table",
       card(
         card_header(
-          div(
-            style = "display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;",
+          div(style = "display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;",
             div(style = "display:flex; align-items:center; gap:8px;", bs_icon("table", size = "1.05em"), "Filterable Bin-level Data"),
             uiOutput("bintable_count_badge")
           )
@@ -833,32 +779,26 @@ ui <- page_sidebar(
         tags$details(
           open = "open",
           style = "background:#ffffff; border:1px solid #d8e0e6; border-radius:10px; padding:0; margin-bottom:20px; box-shadow:0 1px 4px rgba(22,50,79,0.08); overflow:hidden;",
-          tags$summary(
-            style = "font-weight:700; font-size:14.5px; color:#ffffff; background:#16324f; cursor:pointer; display:flex; align-items:center; gap:8px; padding:12px 18px; list-style:none;",
+          tags$summary(style = "font-weight:700; font-size:14.5px; color:#ffffff; background:#16324f; cursor:pointer; display:flex; align-items:center; gap:8px; padding:12px 18px; list-style:none;",
             bs_icon("sliders", size = "1.1em"),
             "Filter Bin Metrics",
             tags$span(style = "margin-left:auto; font-weight:400; font-size:11px; color:#c7d2da;", "Click to expand / collapse")
           ),
-          div(
-            style = "padding:18px 20px 20px 20px;",
+          div(style = "padding:18px 20px 20px 20px;",
             
             # Chromosome selection
             div(
               style = "margin-bottom:16px;",
-              div(
-                style = "display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:8px;",
-                tags$span(
-                  style = "font-weight:700; font-size:11.5px; text-transform:uppercase; letter-spacing:0.6px; color:#7d92a3; display:flex; align-items:center; gap:6px;",
+              div(style = "display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:8px;",
+                tags$span(style = "font-weight:700; font-size:11.5px; text-transform:uppercase; letter-spacing:0.6px; color:#7d92a3; display:flex; align-items:center; gap:6px;",
                   bs_icon("bar-chart-steps"), "Chromosome"
                 ),
-                div(
-                  style = "display:flex; gap:6px;",
+                div(style = "display:flex; gap:6px;",
                   actionButton("binfilter_chr_all", "Select all", class = "btn-sm btn-outline-secondary", style = "font-size:11px; padding:2px 10px; border-radius:5px;"),
                   actionButton("binfilter_chr_clear", "Clear", class = "btn-sm btn-outline-secondary", style = "font-size:11px; padding:2px 10px; border-radius:5px;")
                 )
               ),
-              div(
-                style = "background:#f7f9fa; border:1px solid #e7ecef; border-radius:8px; padding:10px 12px;",
+              div(style = "background:#f7f9fa; border:1px solid #e7ecef; border-radius:8px; padding:10px 12px;",
                 checkboxGroupInput("binfilter_chr", label = NULL, choices = chrom_list, selected = chrom_list, inline = TRUE)
               )
             ),
@@ -866,64 +806,43 @@ ui <- page_sidebar(
             tags$hr(style = "border-top:1px solid #eef2f5; margin:14px 0;"),
             
             # Gene search
-            div(
-              style = "margin-bottom:16px;",
-              div(
-                style = "display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:8px;",
-                tags$span(
-                  style = "font-weight:700; font-size:11.5px; text-transform:uppercase; letter-spacing:0.6px; color:#7d92a3; display:flex; align-items:center; gap:6px;",
-                  bs_icon("search"), "Gene"
-                ),
-                actionButton("binfilter_gene_clear", "Clear", class = "btn-sm btn-outline-secondary", style = "font-size:11px; padding:2px 10px; border-radius:5px;")
-              ),
-              div(
-                style = "background:#f7f9fa; border:1px solid #e7ecef; border-radius:8px; padding:10px 12px;",
-                selectizeInput(
-                  "binfilter_gene", label = NULL, choices = NULL, selected = character(0),
+            div(style = "margin-bottom:16px;",
+              div(style = "display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:8px;",
+                tags$span(style = "font-weight:700; font-size:11.5px; text-transform:uppercase; letter-spacing:0.6px; color:#7d92a3; display:flex; align-items:center; gap:6px;",
+                  bs_icon("search"), "Gene"),
+                actionButton("binfilter_gene_clear", "Clear", class = "btn-sm btn-outline-secondary", style = "font-size:11px; padding:2px 10px; border-radius:5px;")),
+              div(style = "background:#f7f9fa; border:1px solid #e7ecef; border-radius:8px; padding:10px 12px;",
+                selectizeInput("binfilter_gene", label = NULL, choices = NULL, selected = character(0),
                   options = list(placeholder = "Search a gene, e.g. TP53...", maxOptions = 200),
                   width = "100%"
                 ),
-                tags$div(
-                  style = "font-size:11px; color:#7d92a3; margin-top:4px;",
-                  "Shows every bin whose coordinates overlap this gene (gene_start \u2264 bin_end AND gene_end \u2265 bin_start)."
-                )
+                tags$div(style = "font-size:11px; color:#7d92a3; margin-top:4px;",
+                  "Shows every bin whose coordinates overlap this gene (gene_start \u2264 bin_end AND gene_end \u2265 bin_start).")
               )
             ),
             
             tags$hr(style = "border-top:1px solid #eef2f5; margin:14px 0;"),
             
             # Numeric metric filters
-            tags$div(
-              style = "font-weight:700; font-size:11.5px; text-transform:uppercase; letter-spacing:0.6px; color:#7d92a3; margin-bottom:10px; display:flex; align-items:center; gap:6px;",
+            tags$div(style = "font-weight:700; font-size:11.5px; text-transform:uppercase; letter-spacing:0.6px; color:#7d92a3; margin-bottom:10px; display:flex; align-items:center; gap:6px;",
               bs_icon("sliders2"), "Methylation & Content Metrics"
             ),
-            div(
-              style = "display:flex; flex-wrap:wrap; gap:16px; align-items:flex-start;",
+            div(style = "display:flex; flex-wrap:wrap; gap:16px; align-items:flex-start;",
               build_bin_table_filter_inputs(bin_table_filters, bin_table)
             ),
             
             tags$hr(style = "border-top:1px solid #eef2f5; margin:18px 0 14px 0;"),
             
-            div(
-              style = "display:flex; justify-content:flex-end;",
+            div(style = "display:flex; justify-content:flex-end;",
               actionButton(
                 "binfilter_reset", "Reset all filters",
                 icon = bs_icon("arrow-counterclockwise"),
                 class = "btn-sm btn-outline-danger",
-                style = "font-size:12px; border-radius:6px; padding:5px 14px;"
-              )
-            )
+                style = "font-size:12px; border-radius:6px; padding:5px 14px;"))
           )
         ),
-        div(
-          style = "display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:15px;",
-          downloadButton(
-            "bintable_download", 
-            "Download CSV Data", 
-            icon = icon("download"),
-            class = "btn-lg btn-primary",
-            style = "font-weight: 600; padding: 10px 22px; font-size: 15px; border-radius: 6px;"
-          ),
+        div(style = "display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:15px;",
+          downloadButton( "bintable_download", "Download CSV Data", icon = icon("download"), class = "btn-lg btn-primary", style = "font-weight: 600; padding: 10px 22px; font-size: 15px; border-radius: 6px;"),
           uiOutput("bintable_gene_note")
         ),
         div(style = "margin-top:4px;", DTOutput("bintable"))
@@ -1005,10 +924,8 @@ server <- function(input, output, session) {
   output$bintable_count_badge <- renderUI({
     n <- nrow(filtered_bin_table())
     total <- nrow(bin_table)
-    span(
-      style = "font-size:12px; font-weight:600; color:#16324f; background:#eef2f5; border:1px solid #d8e0e6; border-radius:20px; padding:4px 12px; white-space:nowrap;",
-      paste0(format(n, big.mark = ","), " of ", format(total, big.mark = ","), " bins")
-    )
+    span(style = "font-size:12px; font-weight:600; color:#16324f; background:#eef2f5; border:1px solid #d8e0e6; border-radius:20px; padding:4px 12px; white-space:nowrap;",
+      paste0(format(n, big.mark = ","), " of ", format(total, big.mark = ","), " bins"))
   })
   
   output$n_samples <- renderText({ nrow(metadata) })
@@ -1072,10 +989,7 @@ server <- function(input, output, session) {
           card_header(
             div(style = "display:flex; justify-content:space-between; align-items:center; width:100%;",
                 tags$span(pm$title),
-                actionButton(paste0("expand_", pm$id), NULL, icon = bs_icon("arrows-fullscreen"),
-                             class = "btn-sm btn-outline-secondary", title = "Ampliar",
-                             style = "padding:2px 7px; margin-left:auto; margin-right:-5px;")
-            )
+                actionButton(paste0("expand_", pm$id), NULL, icon = bs_icon("arrows-fullscreen"),class = "btn-sm btn-outline-secondary", title = "Expand", style = "padding:2px 7px; margin-left:auto; margin-right:-5px;"))
           ),
           plotOutput(pm$id, height = "300px", click = paste0(pm$id, "_click")),
           height = "350px"
@@ -1088,15 +1002,14 @@ server <- function(input, output, session) {
       meta <- Filter(function(pm) identical(pm$id, zoom), overview_plot_meta)[[1]]
       tagList(
         div(style = "margin-bottom:10px;",
-            actionButton("overview_back", "Go back to Overview", icon = bs_icon("arrow-left-circle"),
-                         class = "btn-sm btn-outline-primary")),
+            actionButton("overview_back", "Go back to Overview", icon = bs_icon("arrow-left-circle"), class = "btn-sm btn-outline-primary")),
         card(card_header(meta$title), plotOutput(meta$id, height = "600px"), height = "650px")
       )
     }
   })
   
   output$overview_sex_comparison <- renderPlot({
-    # counted at the patient level (via overview_patient_shift), not per bin-row
+    # Counted at the patient level (via overview_patient_shift), not per bin-row
     df <- overview_patient_shift()
     validate(need(!is.null(df) && nrow(df) > 0, "No data available for the current selection."))
     
@@ -1112,26 +1025,18 @@ server <- function(input, output, session) {
     
     ggplot(sex_counts, aes(x = 2, y = Count, fill = Sex)) +
       geom_col(width = 1, color = "white", linewidth = 1.2) +
-      geom_text(aes(label = Label), position = position_stack(vjust = 0.5),
-                size = 3.4, color = "white", fontface = "bold", lineheight = 0.9) +
-      coord_polar(theta = "y") +
-      xlim(0.2, 2.5) +
+      geom_text(aes(label = Label), position = position_stack(vjust = 0.5), size = 3.4, color = "white", fontface = "bold", lineheight = 0.9) +
+      coord_polar(theta = "y") + xlim(0.2, 2.5) +
       scale_fill_manual(values = c("Female" = "#d1495b", "Male" = "#3aa9c9", "Unknown" = "#b7c1c9")) +
       labs(fill = NULL, subtitle = paste0(nrow(df), " patient(s) \u2013 ", region_label())) +
       theme_void(base_size = 12) +
-      theme(
-        legend.position = "bottom",
-        plot.subtitle = element_text(size = rel(0.78), color = "#7d92a3", hjust = 0.5)
-      )
+      theme(legend.position = "bottom", plot.subtitle = element_text(size = rel(0.78), color = "#7d92a3", hjust = 0.5))
   })
   
   output$overview_boxplot <- renderPlot({
     df <- selected_bin_table()
     validate(need(nrow(df) > 0, "No bins selected. Choose a chromosome or bins in the sidebar."))
-    plot_df <- data.frame(
-      Type = rep(c("Normal", "Tumor"), each = nrow(df)),
-      Methylation = c(df$mean_methylation_normal, df$mean_methylation_tumor)
-    )
+    plot_df <- data.frame( Type = rep(c("Normal", "Tumor"), each = nrow(df)), Methylation = c(df$mean_methylation_normal, df$mean_methylation_tumor))
     plot_df <- plot_df[is.finite(plot_df$Methylation), ]
     validate(need(nrow(plot_df) > 0, "No valid methylation values for the current selection."))
     plot_df$Type <- factor(plot_df$Type, levels = c("Normal", "Tumor"))
@@ -1139,12 +1044,10 @@ server <- function(input, output, session) {
     ggplot(plot_df, aes(x = Type, y = Methylation, fill = Type)) +
       geom_jitter(width = 0.07, size = 0.9, alpha = 0.25, color = "#16324f") +
       geom_boxplot(width = 0.45, outlier.shape = NA, alpha = 0.92, color = "#16324f", linewidth = 0.4) +
-      stat_summary(fun = mean, geom = "point", shape = 23, size = 2.4,
-                   fill = "white", color = "#16324f", stroke = 0.8) +
+      stat_summary(fun = mean, geom = "point", shape = 23, size = 2.4, fill = "white", color = "#16324f", stroke = 0.8) +
       scale_fill_manual(values = c("Tumor" = "#d1495b", "Normal" = "#3aa9c9")) +
       scale_y_continuous(limits = c(0, 1), expand = expansion(mult = c(0.02, 0.06))) +
-      labs(x = NULL, y = "Mean methylation (per bin)", subtitle = region_label(),
-           caption = "\u25c7 mean") +
+      labs(x = NULL, y = "Mean methylation (per bin)", subtitle = region_label(), caption = "\u25c7 mean") +
       theme_app() +
       theme(legend.position = "none")
   })
@@ -1177,7 +1080,7 @@ server <- function(input, output, session) {
       scale_fill_manual(values = c("Wild-type" = "#3aa9c9", "Mutant" = "#d1495b", "Unknown" = "darkgray")) +
       facet_wrap(~ GeneLabel, nrow = 1, scales = "free_x") +
       labs(x = NULL, y = "Methylation shift (Tumor \u2212 Normal)", subtitle = region_label()) +
-      theme_app() +
+      theme_app() + # Predefined before
       theme(legend.position = "none", axis.text.x = element_text(angle = 20, hjust = 1))
   })
   
@@ -1203,8 +1106,7 @@ server <- function(input, output, session) {
     ggplot(agg, aes(x = Level, y = Shift, fill = Feature)) +
       geom_hline(yintercept = 0, color = "#7d92a3", linewidth = 0.4) +
       geom_col(width = 0.6, show.legend = FALSE) +
-      geom_text(aes(y = Shift, label = paste0("n=", n), vjust = ifelse(Shift >= 0, -0.5, 1.3)),
-                size = 2.7, color = "#16324f") +
+      geom_text(aes(y = Shift, label = paste0("n=", n), vjust = ifelse(Shift >= 0, -0.5, 1.3)), size = 2.7, color = "#16324f") +
       scale_fill_manual(values = c("estadi2" = "#d1495b", "MSS" = "#3aa9c9")) +
       scale_y_continuous(expand = expansion(mult = c(0.15, 0.18))) +
       facet_wrap(~ FeatureLabel, scales = "free_x", nrow = 1) +
@@ -1307,11 +1209,7 @@ server <- function(input, output, session) {
                  colors = c("#16324f", "#0e7c86"), customdata = ~as.character(chr),
                  type = "scatter", mode = "markers", marker = list(size = 4),
                  text = ~bin_id, hoverinfo = "text", source = "genome_overview") |>
-      layout(
-        showlegend = FALSE,
-        xaxis = list(title = "", tickvals = as.numeric(chr_mid), ticktext = chrom_list, tickangle = 45),
-        yaxis = list(title = "Mean methylation", range = c(0, 1)),
-        shapes = chr_boundary_shapes) |>
+      layout(showlegend = FALSE, xaxis = list(title = "", tickvals = as.numeric(chr_mid), ticktext = chrom_list, tickangle = 45), yaxis = list(title = "Mean methylation", range = c(0, 1)), shapes = chr_boundary_shapes) |>
       config(displayModeBar = FALSE) |>
       event_register("plotly_click")
   })
@@ -1327,21 +1225,16 @@ server <- function(input, output, session) {
     # only highlight bins the user actually picked in the sidebar
     hl <- df$bin_id %in% input$bins
     plot_ly(df, x = ~bin_position / 1e6) |>
-      add_trace(y = ~mean_methylation_tumor, type = "scatter", mode = "lines+markers", name = "Tumor",
+      add_trace(y = ~mean_methylation_tumor, type = "scatter", mode = "lines+markers", name = "Tumor", 
                 line = list(color = "#d1495b"),
-                marker = list(color = "#d1495b", size = ifelse(hl, 11, 6),
-                              line = list(color = "#0b2436", width = ifelse(hl, 1.5, 0))),
+                marker = list(color = "#d1495b", size = ifelse(hl, 11, 6), line = list(color = "#0b2436", width = ifelse(hl, 1.5, 0))),
                 text = ~paste0(bin_id, "<br>Tumor mean: ", round(mean_methylation_tumor, 3)), hoverinfo = "text") |>
       add_trace(
         y = ~mean_methylation_normal, type = "scatter", mode = "lines+markers", name = "Normal",
         line = list(color = "#3aa9c9"),
-        marker = list(color = "#3aa9c9", size = ifelse(hl, 11, 6),
-                      line = list(color = "#0b2436", width = ifelse(hl, 1.5, 0))),
+        marker = list(color = "#3aa9c9", size = ifelse(hl, 11, 6), line = list(color = "#0b2436", width = ifelse(hl, 1.5, 0))),
         text = ~paste0(bin_id, "<br>Normal mean: ", round(mean_methylation_normal, 3)), hoverinfo = "text") |>
-      layout(
-        xaxis = list(title = paste0("Position on chr", nav$chr, " (Mb)")),
-        yaxis = list(title = "Mean methylation", range = c(0, 1)),
-        legend = list(orientation = "h", x = 0, y = 1, yanchor = "bottom")
+      layout(xaxis = list(title = paste0("Position on chr", nav$chr, " (Mb)")), yaxis = list(title = "Mean methylation", range = c(0, 1)), legend = list(orientation = "h", x = 0, y = 1, yanchor = "bottom")
       )
   })
   
@@ -1419,18 +1312,13 @@ server <- function(input, output, session) {
     coords$sample_id <- rownames(mat)
     coords <- merge(coords, metadata[, c("sample_id", "patient_id", "Type", "sexe")], by = "sample_id")
     
-    plot_ly(
-      coords, x = ~Dim1, y = ~Dim2, color = ~Type,
+    plot_ly(coords, x = ~Dim1, y = ~Dim2, color = ~Type,
       colors = c("Tumor" = "#d1495b", "Normal" = "#3aa9c9"),
       type = "scatter", mode = "markers",
       marker = list(size = 10, line = list(color = "#0b2436", width = 1)),
       text = ~paste0("Sample: ", sample_id, "<br>Patient: ", patient_id, "<br>Type: ", Type),
-      hoverinfo = "text"
-    ) |>
-      layout(
-        xaxis = list(title = xlab), yaxis = list(title = ylab),
-        legend = list(orientation = "h", x = 0, y = 1.08)
-      )
+      hoverinfo = "text") |>
+      layout(xaxis = list(title = xlab), yaxis = list(title = ylab), legend = list(orientation = "h", x = 0, y = 1.08))
   })
   
   output$tn_network <- renderPlot({
@@ -1471,15 +1359,10 @@ server <- function(input, output, session) {
         data = edge_df, aes(x = x_from, y = y_from, xend = x_to, yend = y_to, alpha = corr),
         color = "#7d92a3", linewidth = 0.4, show.legend = FALSE)
     }
-    p +
-      geom_point(data = nodes, aes(x = x, y = y, fill = mss_label), shape = 21, size = 6, color = "#0b2436", stroke = 0.6) +
+    p + geom_point(data = nodes, aes(x = x, y = y, fill = mss_label), shape = 21, size = 6, color = "#0b2436", stroke = 0.6) +
       geom_text(data = nodes, aes(x = x, y = y, label = patient_id), vjust = -1.4, size = 3, color = "#16324f") +
       scale_fill_manual(values = mss_palette, name = "MSS status") +
-      labs(
-        x = "Dimension 1", y = "Dimension 2",
-        title = "Patient similarity network (methylation-shift correlation)",
-        subtitle = region_label()
-      ) +
+      labs( x = "Dimension 1", y = "Dimension 2", title = "Patient similarity network (methylation-shift correlation)", subtitle = region_label()) +
       theme_minimal(base_size = 12) +
       theme(legend.position = "bottom", panel.grid.minor = element_blank())
   })
@@ -1496,8 +1379,7 @@ server <- function(input, output, session) {
       "Significant hypermethylation" = "#d1495b"
     )
     
-    plot_ly(
-      df, x = ~genome_x, y = ~mean_diff_tumor_normal, color = ~manhattan_category,
+    plot_ly(df, x = ~genome_x, y = ~mean_diff_tumor_normal, color = ~manhattan_category,
       colors = cat_colors, type = "scattergl", mode = "markers",
       marker = list(size = 5, opacity = 0.85, line = list(width = 0)),
       text = ~paste0(
@@ -1509,15 +1391,13 @@ server <- function(input, output, session) {
       ),
       hoverinfo = "text"
     ) |>
-      layout(
-        xaxis = list(title = "", tickvals = as.numeric(chr_mid), ticktext = chrom_list, tickangle = 45),
+      layout(xaxis = list(title = "", tickvals = as.numeric(chr_mid), ticktext = chrom_list, tickangle = 45),
         yaxis = list(title = "Methylation difference (Tumor \u2212 Normal)", zeroline = TRUE, zerolinewidth = 1.4, zerolinecolor = "#16324f"),
         shapes = chr_boundary_shapes,
         legend = list(orientation = "h", x = 0, y = 1.12),
         hovermode = "closest"
       ) |>
-      config(
-        displayModeBar = TRUE,
+      config(displayModeBar = TRUE,
         toImageButtonOptions = list(format = "png", filename = "genome_wide_methylation_profile")
       )
   })
@@ -1549,16 +1429,11 @@ server <- function(input, output, session) {
     
     p_main <- ggplot(shift_df, aes(x = bin_id, y = patient_id, fill = shift)) +
       geom_tile(color = "white", linewidth = 0.15) +
-      scale_fill_gradient2(
-        low = "#3aa9c9", mid = "white", high = "#d1495b", midpoint = 0,
-        limits = c(-max_abs, max_abs), name = "Methylation\nshift\n(Tumor \u2212 Normal)") +
+      scale_fill_gradient2(low = "#3aa9c9", mid = "white", high = "#d1495b", midpoint = 0,limits = c(-max_abs, max_abs), name = "Methylation\nshift\n(Tumor \u2212 Normal)") +
       scale_y_discrete(limits = rev(ord)) +
       labs(x = "Bin", y = "Patient") +
       theme_minimal(base_size = 12) +
-      theme(
-        panel.grid = element_blank(),
-        axis.text.y = element_text(size = 6),
-        axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 6))
+      theme(panel.grid = element_blank(), axis.text.y = element_text(size = 6), axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 6))
     
     if (identical(feature, "none")) {
       return(p_main)
@@ -1637,22 +1512,17 @@ server <- function(input, output, session) {
       scale_x_discrete(labels = paste0(levels(df$Status), "\n(n=", as.numeric(n_by_status[levels(df$Status)]), ")")) +
       annotate("text", x = 1.5, y = y_max * 1.1, label = test_res$label, size = 3.5, color = "#16324f", fontface = "bold") +
       scale_y_continuous(limits = c(0, max(1, y_max * 1.18)), expand = expansion(mult = c(0.02, 0.02))) +
-      labs(
-        x = NULL, y = "Mean tumor methylation (per bin)",
+      labs( x = NULL, y = "Mean tumor methylation (per bin)",
         title = paste0(gene, " mutation status vs. tumor methylation"),
-        subtitle = region_label()
-      ) +
+        subtitle = region_label()) +
       theme_app() +
       theme(legend.position = "none")
     
     sel_id <- selected_patient_id()
     if (!is.null(sel_id) && sel_id %in% df$patient_id) {
       hl <- df[df$patient_id == sel_id, ]
-      p <- p +
-        geom_point(data = hl, aes(x = Status, y = Tumor), shape = 21, size = 4.8,
-                   fill = "#e0a339", color = "#16324f", stroke = 1.1) +
-        geom_text(data = hl, aes(x = Status, y = Tumor, label = paste0("Patient ", patient_id)),
-                  vjust = -1.3, size = 3, color = "#16324f", fontface = "bold")
+      p <- p + geom_point(data = hl, aes(x = Status, y = Tumor), shape = 21, size = 4.8, fill = "#e0a339", color = "#16324f", stroke = 1.1) +
+        geom_text(data = hl, aes(x = Status, y = Tumor, label = paste0("Patient ", patient_id)), vjust = -1.3, size = 3, color = "#16324f", fontface = "bold")
     }
     p
   })
@@ -1664,22 +1534,14 @@ server <- function(input, output, session) {
     num_cols <- vapply(display_df, is.numeric, logical(1))
     display_df[num_cols] <- lapply(display_df[num_cols], round, 3)
     
-    datatable(
-      display_df,
-      filter = "top",
-      selection = "single",
-      rownames = FALSE,
-      options = list(scrollX = TRUE, pageLength = 10, autoWidth = TRUE),
-      class = "stripe hover compact"
-    )
+    datatable(display_df,filter = "top",  selection = "single",rownames = FALSE,  options = list(scrollX = TRUE, pageLength = 10, autoWidth = TRUE),class = "stripe hover compact")
   })
   
   output$selected_patient_banner <- renderUI({
     sel_id <- selected_patient_id()
     if (is.null(sel_id)) {
-      return(div(
-        style = "font-size:12px; color:#7d92a3; background:#eef2f5; border:1px dashed #c3ccd3; border-radius:8px; padding:10px 16px; margin-bottom:14px;",
-        bs_icon("info-circle"), " No patient selected \u2014 click a row in the clinical metadata table to highlight that patient in the plot."
+      return(div(style = "font-size:12px; color:#7d92a3; background:#eef2f5; border:1px dashed #c3ccd3; border-radius:8px; padding:10px 16px; margin-bottom:14px;",
+        bs_icon("info-circle"), " No patient selected, click a row in the clinical metadata table to highlight that patient in the plot."
       ))
     }
     row <- clinical_profile_table[clinical_profile_table$patient_id == sel_id, ]
@@ -1688,8 +1550,7 @@ server <- function(input, output, session) {
     chip <- function(col_id, fallback = "\u2014") {
       raw <- if (col_id %in% names(row) && length(row[[col_id]]) == 1) row[[col_id]] else NA
       val <- if (is.na(raw)) fallback else if (is.numeric(raw)) format(round(raw, 3), nsmall = 3) else as.character(raw)
-      div(
-        style = "display:flex; flex-direction:column; gap:2px;",
+      div(style = "display:flex; flex-direction:column; gap:2px;",
         tags$span(clinical_label_for(col_id), style = "font-size:10px; color:#7d92a3; text-transform:uppercase; letter-spacing:0.4px;"),
         tags$span(val, style = "font-size:14px; font-weight:600; color:#16324f;")
       )
@@ -1697,12 +1558,9 @@ server <- function(input, output, session) {
     
     chip_cols <- intersect(c("sexe", "estadi2", "MSS", "BRAF", "KRAS", "TP53", "Recaiguda", "MethShift"), names(row))
     
-    div(
-      style = "display:flex; align-items:center; gap:26px; flex-wrap:wrap; background:#eef2f5; border:1px solid #d8e0e6; border-radius:8px; padding:12px 18px; margin-bottom:14px;",
-      div(
-        style = "display:flex; align-items:center; gap:8px; font-weight:700; color:#16324f;",
-        bs_icon("person-check-fill", size = "1.3em"), paste0("Patient ", sel_id)
-      ),
+    div(style = "display:flex; align-items:center; gap:26px; flex-wrap:wrap; background:#eef2f5; border:1px solid #d8e0e6; border-radius:8px; padding:12px 18px; margin-bottom:14px;",
+      div(style = "display:flex; align-items:center; gap:8px; font-weight:700; color:#16324f;",
+        bs_icon("person-check-fill", size = "1.3em"), paste0("Patient ", sel_id)),
       lapply(chip_cols, chip),
       actionButton("clear_patient_selection", "Clear selection", icon = bs_icon("x-circle"),
                    class = "btn-sm btn-outline-secondary", style = "margin-left:auto;")
@@ -1714,8 +1572,7 @@ server <- function(input, output, session) {
   # note shown if gene annotation couldn't be computed at all
   output$bintable_gene_note <- renderUI({
     if (!gene_annotation_available) {
-      return(div(
-        style = "font-size:12px; color:#a34; background:#fdf1ef; border:1px solid #f0d6d1; border-radius:8px; padding:8px 14px; max-width:520px;",
+      return(div(style = "font-size:12px; color:#a34; background:#fdf1ef; border:1px solid #f0d6d1; border-radius:8px; padding:8px 14px; max-width:520px;",
         bs_icon("exclamation-triangle"),
         " Gene annotation source files weren't found when the app started, so Gene Count / Genes / Gene IDs are unavailable. See the app startup warning for details."
       ))
@@ -1730,19 +1587,11 @@ server <- function(input, output, session) {
     count_cols <- intersect(c("Alu Count", "CpG Count", "Gene Count"), names(display_df))
     delta_col  <- "\u0394 (Tumor \u2212 Normal)"
     
-    dt <- datatable(
-      display_df,
+    dt <- datatable(display_df,
       container = bin_table_header_sketch,
       rownames = FALSE,
       class = "stripe hover compact",
-      options = list(
-        scrollX = TRUE,
-        pageLength = 15,
-        lengthMenu = list(c(10, 15, 25, 50, -1), c("10", "15", "25", "50", "All")),
-        dom = "ltip",
-        language = list(search = "Quick search:", lengthMenu = "Show _MENU_ bins per page"),
-        columnDefs = list(list(className = "dt-center", targets = "_all"))
-      )
+      options = list(scrollX = TRUE, pageLength = 15, lengthMenu = list(c(10, 15, 25, 50, -1), c("10", "15", "25", "50", "All")), dom = "ltip", language = list(search = "Quick search:", lengthMenu = "Show _MENU_ bins per page"), columnDefs = list(list(className = "dt-center", targets = "_all")))
     )
     
     if (length(meth_cols) > 0) dt <- formatRound(dt, meth_cols, 3)
@@ -1751,27 +1600,17 @@ server <- function(input, output, session) {
     
     # colour the tumor/normal shift so a hyper- vs hypo-methylated bin is visible at a glance
     if (delta_col %in% names(display_df)) {
-      dt <- formatStyle(
-        dt, delta_col,
-        fontWeight = "600",
-        color = styleInterval(0, c("#0e7c86", "#d1495b"))
-      )
+      dt <- formatStyle(dt, delta_col, fontWeight = "600", color = styleInterval(0, c("#0e7c86", "#d1495b")))
     }
     # make bins that carry one or more COSMIC cancer census genes stand out from the majority with none
     if ("Gene Count" %in% names(display_df)) {
-      dt <- formatStyle(
-        dt, "Gene Count",
-        fontWeight = styleInterval(0, c("normal", "700")),
-        color = styleInterval(0, c("#adb8c0", "#16324f")),
-        backgroundColor = styleInterval(0, c("transparent", "#e8f5f3"))
+      dt <- formatStyle(dt, "Gene Count", fontWeight = styleInterval(0, c("normal", "700")), color = styleInterval(0, c("#adb8c0", "#16324f")), backgroundColor = styleInterval(0, c("transparent", "#e8f5f3"))
       )
     }
     dt
   })
   
-  output$bintable_download <- downloadHandler(
-    filename = function() {"bintable.csv"},
-    content = function(file) {
+  output$bintable_download <- downloadHandler(filename = function() {"bintable.csv"},content = function(file) {
       write.csv(build_display_bin_table(filtered_bin_table(), plain = TRUE), file, row.names = FALSE)
     }
   )
