@@ -125,8 +125,7 @@ bin_table_header_sketch <- local({
   group_rle  <- rle(col_groups)
   htmltools::withTags(table(
     class = "display",
-    thead(
-      tr(lapply(seq_along(group_rle$lengths), function(i) {
+    thead(tr(lapply(seq_along(group_rle$lengths), function(i) {
           th(colspan = group_rle$lengths[i],
             style = "text-align:center; background:#eef2f5; color:#16324f; border-bottom:2px solid #d8e0e6; font-size:11.5px; text-transform:uppercase; letter-spacing:0.4px;",
             group_rle$values[i])
@@ -171,13 +170,11 @@ build_bin_table_filter_inputs <- function(filters, df) {
     
     div(
       style = "flex: 1 1 200px; min-width: 180px; max-width: 250px;",
-      sliderInput(
-        inputId = paste0("binfilter_", f$id),
+      sliderInput(inputId = paste0("binfilter_", f$id),
         label = paste0(f$label, " ", f$op),
         min = lo, max = hi, value = lo, step = step,
-        width = "100%")
-    )
-  })
+        width = "100%"))
+    })
 }
 
 # applies all the configured filters to a bin_table subset
@@ -286,15 +283,12 @@ bin_stats$q_value <- stats::p.adjust(bin_stats$p_value, method = "BH")
 
 # one row per patient with the clinical fields we can use to annotate the heatmap
 # (Recaiguda/BRAF/KRAS/TP53/MSS/sexe/estadi2 are the same for a patient's Tumor and Normal sample)
-patient_annotation <- unique(metadata[metadata$Type == "Tumor", c(
-  "patient_id", "Recaiguda", "BRAF", "KRAS", "TP53", "MSS", "sexe", "estadi2"
-)])
+patient_annotation <- unique(metadata[metadata$Type == "Tumor", c("patient_id", "Recaiguda", "BRAF", "KRAS", "TP53", "MSS", "sexe", "estadi2")])
 patient_annotation$patient_id <- as.character(patient_annotation$patient_id)
 patient_bin_shift$patient_id <- as.character(patient_bin_shift$patient_id)
 
 # merge the per-bin significance stats computed above into the genome-wide bin table
-genome_wide_bins <- merge(
-  genome_wide_bins, bin_stats[, c("bin_id", "mean_shift", "sd_shift", "n", "p_value", "q_value")],
+genome_wide_bins <- merge(genome_wide_bins, bin_stats[, c("bin_id", "mean_shift", "sd_shift", "n", "p_value", "q_value")],
   by = "bin_id", all.x = TRUE
 )
 genome_wide_bins$chr <- factor(genome_wide_bins$chr, levels = chrom_list)
@@ -486,8 +480,7 @@ natural_level_order <- function(x) {
 # gene set expanded (82 genes) using https://www.intogen.org/search and UCSC Genome Browser 
 
 gene_lookup_table <- data.frame(
-  gene = c(
-    "APC", "TP53", "KRAS", "PIK3CA", "SMAD4", "FBXW7", "SOX9", "AMER1",
+  gene = c("APC", "TP53", "KRAS", "PIK3CA", "SMAD4", "FBXW7", "SOX9", "AMER1",
     "BRAF", "TCF7L2", "LRP1B", "ATM", "ARID1A", "NRAS", "KMT2C", "GRIN2A",
     "PCBP1", "ERBB2", "MTOR", "CTNNB1", "BCL9L", "SMAD2", "CYLD", "ERBB3",
     "PTEN", "BCL9", "TAF1L", "SMAD3", "RNF43", "ERBB4", "PIK3R1", "ACVR2A",
@@ -776,8 +769,7 @@ ui <- page_sidebar(title = div(style = "display:flex; justify-content:space-betw
           )
         ),
         
-        tags$details(
-          open = "open",
+        tags$details(open = "open",
           style = "background:#ffffff; border:1px solid #d8e0e6; border-radius:10px; padding:0; margin-bottom:20px; box-shadow:0 1px 4px rgba(22,50,79,0.08); overflow:hidden;",
           tags$summary(style = "font-weight:700; font-size:14.5px; color:#ffffff; background:#16324f; cursor:pointer; display:flex; align-items:center; gap:8px; padding:12px 18px; list-style:none;",
             bs_icon("sliders", size = "1.1em"),
@@ -787,8 +779,7 @@ ui <- page_sidebar(title = div(style = "display:flex; justify-content:space-betw
           div(style = "padding:18px 20px 20px 20px;",
             
             # Chromosome selection
-            div(
-              style = "margin-bottom:16px;",
+            div(style = "margin-bottom:16px;",
               div(style = "display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:8px;",
                 tags$span(style = "font-weight:700; font-size:11.5px; text-transform:uppercase; letter-spacing:0.6px; color:#7d92a3; display:flex; align-items:center; gap:6px;",
                   bs_icon("bar-chart-steps"), "Chromosome"
