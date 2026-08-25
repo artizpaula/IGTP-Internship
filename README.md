@@ -137,10 +137,7 @@ The scripts as provided still have **hardcoded paths from the original author's 
     "../Gene_Annotation.R"
   ))
   ```
-  → This is just a safety net you shouldn't need it if you ran the full pipeline correctly. You'd only touch this if `data_app.rds` is missing the `gene_count`/`gene_ids`/`gene_names` columns (e.g. you ran the pipeline without the COSMIC TSV present) and want the app to compute gene annotation on the fly instead. If so, place a copy of the `Archivo/` folder and `Gene_Annotation.R` in one of the three candidate locations listed above.
-
-- No other paths need editing. The file upload for a custom bin list (`.csv`/`.tsv`/`.txt`) is handled entirely by Shiny's built-in upload widget, no path changes needed.
-
+  
 ---
 
 ## Quick Summary of What You Need
