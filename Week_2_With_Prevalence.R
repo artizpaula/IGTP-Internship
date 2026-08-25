@@ -11,6 +11,18 @@ source("Alus_and_CpGs.R")
 source("Gene_Annotation.R")
 
 # Directory paths (personal paths)
+
+# Expected folder structure, all placed together in one project folder:
+
+#   Week_2_With_Prevalence.R
+#   Alus_and_CpGs.R
+#   Gene_Annotation.R
+#   Dataset/
+#     Metadata/
+#     Bins/
+#     Alus_CpGs/
+#     Archivo/
+
 # Paths
 dataset_metadata <- "/Users/paulaartizduenas/Desktop/Project/Dataset/Metadata"
 dataset_bins <- "/Users/paulaartizduenas/Desktop/Project/Dataset/Bins"
