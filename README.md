@@ -35,7 +35,7 @@ The app never touches the raw data directly, it just loads one pre-built file, `
 | 1 | `Alus_and_CpGs.R` | Helper functions that read the raw per-CpG methylation tables and count CpGs/Alu elements per 1 Mb bin. You don't run this yourself, it gets `source()`-d automatically by `Week_2_With_Prevalence.R`. |
 | 2 | `Gene_Annotation.R` | Helper functions that match bin coordinates against the COSMIC Cancer Gene Census to add gene names/IDs. Also `source()`-d automatically, not run directly. |
 | 3 | `Week_2_With_Prevalence.R` | **This is the one you actually run.** It loads the metadata, reshapes the per-sample JSON files, sources the two scripts above, computes CpG/Alu counts and gene annotation, works out prevalence stats, builds the final bin table, and saves `data_app.rds`. |
-| 4 | `app_final_.R` | The Shiny app itself. It just loads `data_app.rds` (from step 3), launch it with `shiny::runApp()`, it's not part of the "pipeline" as such. |
+| 4 | `app.R` | The Shiny app itself. It just loads `data_app.rds` (from step 3), launch it with `shiny::runApp()`, it's not part of the "pipeline" as such. |
 
 **TL;DR:** you only run `Week_2_With_Prevalence.R`. As long as all three `.R` scripts are sitting in the same folder, it takes care of the rest.
 
@@ -72,7 +72,7 @@ Project/
 │   ├── Alus_and_CpGs.R
 │   ├── Gene_Annotation.R
 │   ├── Week_2_With_Prevalence.R
-│   └── app_final_.R
+│   └── app.R
 └── Dataset/
     ├── Metadata/
     │   └── Metadata_all_runs_combined.csv
@@ -117,10 +117,10 @@ The scripts as provided still have **hardcoded paths from the original author's 
 
 - No hardcoded paths here, every function takes a `filepath`/`cosmic_tsv_path` argument as input. Just keep them in the same folder as `Week_2_With_Prevalence.R` so the `source()` calls above can find them.
 
-### In `app_final_.R`
+### In `app.R`
 
 - **Line 12**: `data <- readRDS("data_app.rds")`
-  → Since this is a relative path, either copy `data_app.rds` (from the pipeline's `Data Processed/` output) into the same folder as `app_final_.R`, or change this line to point to it directly, e.g.:
+  → Since this is a relative path, either copy `data_app.rds` (from the pipeline's `Data Processed/` output) into the same folder as `app.R`, or change this line to point to it directly, e.g.:
   ```r
   data <- readRDS("/path/to/Data Processed/data_app.rds")
   ```
@@ -137,7 +137,7 @@ The scripts as provided still have **hardcoded paths from the original author's 
     "../Gene_Annotation.R"
   ))
   ```
-  
+
 ---
 
 ## Quick Summary of What You Need
@@ -146,7 +146,7 @@ The scripts as provided still have **hardcoded paths from the original author's 
 - `Alus_and_CpGs.R`: CpG/Alu counting helpers (sourced automatically).
 - `Gene_Annotation.R`: gene annotation helpers (sourced automatically).
 - `Week_2_With_Prevalence.R`: the pipeline driver, produces `data_app.rds`.
-- `app_final_.R`: the Shiny app.
+- `app.R`: the Shiny app.
 
 **You need to supply yourself:**
 - `Metadata_all_runs_combined.csv`
@@ -161,7 +161,7 @@ The scripts as provided still have **hardcoded paths from the original author's 
 
 **R packages you'll need:**
 - Pipeline (`Week_2_With_Prevalence.R` + the scripts it sources): `jsonlite`, `data.table`.
-- App (`app_final_.R`): `shiny`, `bslib`, `bsicons`, `DT`, `plotly`, `ggplot2`, `patchwork`.
+- App (`app.R`): `shiny`, `bslib`, `bsicons`, `DT`, `plotly`, `ggplot2`, `patchwork`.
 
 ---
 
@@ -175,8 +175,8 @@ The scripts as provided still have **hardcoded paths from the original author's 
    source("Week_2_With_Prevalence.R")
    ```
    This creates `data_app.rds` inside a `Data Processed/` folder next to your metadata folder.
-5. Copy (or symlink) `data_app.rds` into the same folder as `app_final_.R` or edit line 12 of `app_final_.R` to point directly to it.
+5. Copy (or symlink) `data_app.rds` into the same folder as `app.R` or edit line 12 of `app.R` to point directly to it.
 6. Launch the app:
    ```r
-   shiny::runApp("app_final_.R")
+   shiny::runApp("app.R")
    ```
