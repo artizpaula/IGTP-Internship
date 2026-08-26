@@ -54,7 +54,7 @@ if (!gene_annotation_present) {
     hit <- paths[file.exists(paths)]
     if (length(hit) > 0) hit[[1]] else NA_character_
   }
-  # COSMIC genes 
+  # COSMIC genes (path must be changed to personal pathway where "Archivo" folder is located)
   cosmic_tsv_path <- find_first_existing(c(
     "/Users/paulaartizduenas/Desktop/Project/Dataset/Archivo/Cosmic_CancerGeneCensus_Tsv_v101_GRCh37/Cosmic_CancerGeneCensus_v101_GRCh37.tsv"))
   gene_annotation_script <- find_first_existing(c("Gene_Annotation.R","../Gene_Annotation.R"))
