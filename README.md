@@ -37,7 +37,7 @@ The app never touches the raw data directly, it just loads one pre-built file, `
 | 3 | `Week_2_With_Prevalence.R` | **This is the one you actually run.** It loads the metadata, reshapes the per-sample JSON files, sources the two scripts above, computes CpG/Alu counts and gene annotation, works out prevalence stats, builds the final bin table, and saves `data_app.rds`. |
 | 4 | `app.R` | The Shiny app itself. It just loads `data_app.rds` (from step 3), launch it with `shiny::runApp()`, it's not part of the "pipeline" as such. |
 
-**TL;DR:** you only run `Week_2_With_Prevalence.R`. As long as all three `.R` scripts are sitting in the same folder, it takes care of the rest.
+**You only run `Week_2_With_Prevalence.R`. As long as all three `.R` scripts are sitting in the same folder, it takes care of the rest.**
 
 ---
 
