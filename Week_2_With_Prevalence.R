@@ -4,10 +4,10 @@
 library(jsonlite)   # for reading the JSON files
 library(data.table) # fast reading/aggregation for the big raw per-CpG methylation tables
 
-setwd("/Users/paulaartizduenas/Desktop/Project/R Scripts")
+setwd("/Users/paulaartizduenas/Desktop/Project/R Scripts") # Paths (chnage to personal pathways where Alus_and_CpGs.R and Gene_Annotation.R are located)
 # CpG/Alu-per-bin counting functions, used in section 5b below
 source("Alus_and_CpGs.R")
-# gene annotation functions (bin <-> gene coordinate overlap), used in section 5c below
+# Gene annotation functions (bin <-> gene coordinate overlap), used in section 5c below
 source("Gene_Annotation.R")
 
 # Directory paths (personal paths)
