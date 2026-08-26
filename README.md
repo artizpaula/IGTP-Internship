@@ -110,7 +110,7 @@ The scripts as provided still have **hardcoded paths from the original author's 
   dataset_gene_annotation <- "/Users/paulaartizduenas/Desktop/Project/Dataset/Archivo"
   ```
 
-- **Lines 58–61**: Change this to wherever "Archivo" folder is located in your machine.
+- **Lines 58–61**: Change this to wherever "Cosmic_CancerGeneCensus_v101_GRCh37.tsv" file is located in your machine.
   ```r
   cosmic_tsv_path <-find_first_existing(c("/Users/paulaartizduenas/Desktop/Project/Dataset/Archivo/Cosmic_CancerGeneCensus_Tsv_v101_GRCh37/Cosmic_CancerGeneCensus_v101_GRCh37.tsv"))
 
