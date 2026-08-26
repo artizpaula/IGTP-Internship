@@ -109,6 +109,12 @@ The scripts as provided still have **hardcoded paths from the original author's 
 
   dataset_gene_annotation <- "/Users/paulaartizduenas/Desktop/Project/Dataset/Archivo"
   ```
+
+- **Lines 58–61**: Change this to wherever "Archivo" folder is located in your machine.
+  ```r
+  cosmic_tsv_path <-find_first_existing(c("/Users/paulaartizduenas/Desktop/Project/Dataset/Archivo/Cosmic_CancerGeneCensus_Tsv_v101_GRCh37/Cosmic_CancerGeneCensus_v101_GRCh37.tsv"))
+
+  ```
   → Update **all four** to point to your local copies of the data described above. Everything else (`metadata_dir`, `bins_dir`, `output_dir`, `cosmic_tsv_path`, `crc_gene_list_path`) gets built automatically from these with `file.path()` so nothing past line 28 needs editing, as long as the folder/file names inside each of the four roots match exactly what's listed under "Data You Need to Provide" (e.g. the metadata file needs to be literally named `Metadata_all_runs_combined.csv`).
 
 #### In `Alus_and_CpGs.R` and `Gene_Annotation.R`
