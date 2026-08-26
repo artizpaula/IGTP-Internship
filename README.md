@@ -2,11 +2,11 @@
 
 ##### Paula Artiz Dueñas, UPC
 
-## What This Project Is About
+### What This Project Is About
 
 This project is an interactive **R Shiny web app** for exploring and visualizing DNA methylation data in colorectal cancer. It lets users look at genomic "bins" (1 Mb chunks of the genome), compare methylation between tumor and normal samples, filter by region, and explore gene annotations, all through interactive plots and tables.
 
-## What the App Can Do
+### What the App Can Do
 
 The app has a sidebar for picking data, plus several tabs for exploring it.
 
@@ -26,7 +26,7 @@ The app has a sidebar for picking data, plus several tabs for exploring it.
 
 ---
 
-## How the Pipeline Works (Run These in Order!)
+### How the Pipeline Works (Run These in Order!)
 
 The app never touches the raw data directly, it just loads one pre-built file, `data_app.rds`. That file is created by running three scripts, in this order:
 
@@ -41,7 +41,7 @@ The app never touches the raw data directly, it just loads one pre-built file, `
 
 ---
 
-## Data You Need to Provide
+### Data You Need to Provide
 
 None of the raw data is included in this repo, you need to gather the following yourself, matching these formats exactly, before running the pipeline.
 
@@ -62,7 +62,7 @@ None of the raw data is included in this repo, you need to gather the following 
    - Inside a subfolder called `Cosmic_CancerGeneCensus_Tsv_v101_GRCh37/`
    - Needs the columns `GENE_SYMBOL`, `COSMIC_GENE_ID`, `CHROMOSOME`, `GENOME_START`, `GENOME_STOP`.
 
-### Suggested folder layout
+#### Suggested folder layout
 
 Any layout works as long as you update the path variables to match (see below), but here's a layout that mirrors the original project:
 
@@ -92,11 +92,11 @@ Running the pipeline will also create a `Data Processed/` folder (next to `Datas
 
 ---
 
-## Paths You Need to Edit Before Running
+### Paths You Need to Edit Before Running
 
 The scripts as provided still have **hardcoded paths from the original author's laptop**. These won't work anywhere else, so you'll need to change them.
 
-### In `Week_2_With_Prevalence.R`
+#### In `Week_2_With_Prevalence.R`
 
 - **Line 7**: `setwd("/Users/paulaartizduenas/Desktop/Project/R Scripts")`
   → Change this to wherever `Alus_and_CpGs.R`, `Gene_Annotation.R`, and `Week_2_With_Prevalence.R` live on your machine (they all need to be in the same folder, since lines 9 and 11 `source()` them by relative path).
@@ -111,11 +111,11 @@ The scripts as provided still have **hardcoded paths from the original author's 
   ```
   → Update **all four** to point to your local copies of the data described above. Everything else (`metadata_dir`, `bins_dir`, `output_dir`, `cosmic_tsv_path`, `crc_gene_list_path`) gets built automatically from these with `file.path()` so nothing past line 28 needs editing, as long as the folder/file names inside each of the four roots match exactly what's listed under "Data You Need to Provide" (e.g. the metadata file needs to be literally named `Metadata_all_runs_combined.csv`).
 
-### In `Alus_and_CpGs.R` and `Gene_Annotation.R`
+#### In `Alus_and_CpGs.R` and `Gene_Annotation.R`
 
 - No hardcoded paths here, every function takes a `filepath`/`cosmic_tsv_path` argument as input. Just keep them in the same folder as `Week_2_With_Prevalence.R` so the `source()` calls above can find them.
 
-### In `app.R`
+#### In `app.R`
 
 - **Line 12**: `data <- readRDS("data_app.rds")`
   → Since this is a relative path, either copy `data_app.rds` (from the pipeline's `Data Processed/` output) into the same folder as `app.R`, or change this line to point to it directly, e.g.:
@@ -138,7 +138,7 @@ The scripts as provided still have **hardcoded paths from the original author's 
 
 ---
 
-## Quick Summary of What You Need
+### Quick Summary of What You Need
 
 **Already in this repo:**
 - `Alus_and_CpGs.R`: CpG/Alu counting helpers (sourced automatically).
@@ -163,7 +163,7 @@ The scripts as provided still have **hardcoded paths from the original author's 
 
 ---
 
-## Steps to Run Everything
+### Steps to Run Everything
 
 1. Install the R packages listed above.
 2. Put `Alus_and_CpGs.R`, `Gene_Annotation.R`, and `Week_2_With_Prevalence.R` in the same folder.
