@@ -1053,9 +1053,9 @@ server <- function(input, output, session) {
     req(input$browser_search)
     res <- parse_genomic_search(input$browser_search, bin_table, chrom_list, gene_lookup_table)
     if (identical(res$status, "ok")) {
-      nav$chr   <- res$chr # set this first so the browser_chr observer above sees it and skips its reset
+      nav$chr<- res$chr # set this first so the browser_chr observer above sees it and skips its reset
       nav$start <- max(1, floor(res$start))
-      nav$end   <- min(chrom_lengths[[res$chr]], ceiling(res$end))
+      nav$end <- min(chrom_lengths[[res$chr]], ceiling(res$end))
       if (nav$end <= nav$start) nav$end <- min(chrom_lengths[[res$chr]], nav$start + 2e6)
       if (!identical(input$browser_chr, res$chr)) updateSelectInput(session, "browser_chr", selected = res$chr)
       showNotification(res$message, type = "message", duration = 4)
@@ -1073,8 +1073,7 @@ server <- function(input, output, session) {
   
   output$browser_position_header <- renderText({
     req(nav$chr, nav$start, nav$end)
-    paste0(
-      "Genome Browser - chr", nav$chr, ": ",
+    paste0("Genome Browser - chr", nav$chr, ": ",
       format(round(nav$start), big.mark = ",", scientific = FALSE), "-",
       format(round(nav$end), big.mark = ",", scientific = FALSE),
       " (", format_mb_label(nav$end - nav$start), ")")
