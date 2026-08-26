@@ -122,20 +122,6 @@ The scripts as provided still have **hardcoded paths from the original author's 
   ```r
   data <- readRDS("/path/to/Data Processed/data_app.rds")
   ```
-
-- **Lines 58–66**: a fallback lookup for the COSMIC TSV and `Gene_Annotation.R`, used *only* if `data_app.rds` is somehow missing its gene annotation columns:
-  ```r
-  cosmic_tsv_path <- find_first_existing(c(
-    "Archivo/Cosmic_CancerGeneCensus_Tsv_v101_GRCh37/Cosmic_CancerGeneCensus_v101_GRCh37.tsv",
-    "../Archivo/Cosmic_CancerGeneCensus_Tsv_v101_GRCh37/Cosmic_CancerGeneCensus_v101_GRCh37.tsv",
-    "Data/Archivo/Cosmic_CancerGeneCensus_Tsv_v101_GRCh37/Cosmic_CancerGeneCensus_v101_GRCh37.tsv"
-  ))
-  gene_annotation_script <- find_first_existing(c(
-    "Gene_Annotation.R",
-    "../Gene_Annotation.R"
-  ))
-  ```
-
 ---
 
 ### Quick Summary of What You Need
