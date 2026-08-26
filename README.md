@@ -101,12 +101,11 @@ The scripts as provided still have **hardcoded paths from the original author's 
 - **Line 7**: `setwd("/Users/paulaartizduenas/Desktop/Project/R Scripts")`
   → Change this to wherever `Alus_and_CpGs.R`, `Gene_Annotation.R`, and `Week_2_With_Prevalence.R` live on your machine (they all need to be in the same folder, since lines 9 and 11 `source()` them by relative path).
 
-- **Lines 15–18**: the four dataset root paths:
+- **Lines 15–18**: the four dataset root paths (Update **all four** to point to your local copies of the data described above).
   ```r
   dataset_metadata <- "/Users/paulaartizduenas/Desktop/Project/Dataset/Metadata"
   dataset_bins <- "/Users/paulaartizduenas/Desktop/Project/Dataset/Bins"
   dataset_alus_cpgs <- "/Users/paulaartizduenas/Desktop/Project/Dataset/Alus_CpGs"
-
   dataset_gene_annotation <- "/Users/paulaartizduenas/Desktop/Project/Dataset/Archivo"
   ```
 
@@ -115,8 +114,6 @@ The scripts as provided still have **hardcoded paths from the original author's 
   cosmic_tsv_path <-find_first_existing(c("/Users/paulaartizduenas/Desktop/Project/Dataset/Archivo/Cosmic_CancerGeneCensus_Tsv_v101_GRCh37/Cosmic_CancerGeneCensus_v101_GRCh37.tsv"))
 
   ```
-  → Update **all four** to point to your local copies of the data described above. Everything else (`metadata_dir`, `bins_dir`, `output_dir`, `cosmic_tsv_path`, `crc_gene_list_path`) gets built automatically from these with `file.path()` so nothing past line 28 needs editing, as long as the folder/file names inside each of the four roots match exactly what's listed under "Data You Need to Provide" (e.g. the metadata file needs to be literally named `Metadata_all_runs_combined.csv`).
-
 #### In `Alus_and_CpGs.R` and `Gene_Annotation.R`
 
 - No hardcoded paths here, every function takes a `filepath`/`cosmic_tsv_path` argument as input. Just keep them in the same folder as `Week_2_With_Prevalence.R` so the `source()` calls above can find them.
