@@ -597,7 +597,7 @@ ui <- page_sidebar(title = div(style = "display:flex; justify-content:space-betw
                                          # 3. Tumor vs Normal
                                          nav_panel("Tumor vs. Normal", navset_tab(
                                            nav_panel("Methylation density", card(full_screen = TRUE, card_header("Methylation density (Tumor vs Normal)"), plotOutput("tn_density", height = "58vh"), plot_desc("Shape of the methylation distribution, Tumor vs Normal overlapped."))),
-                                           nav_panel("PCA / UMAP", card(full_screen = TRUE, card_header("PCA / UMAP (interactive)"), radioButtons("proj_method", NULL, choices = c("PCA", "UMAP"), inline = TRUE), plotlyOutput("tn_projection", height = "56vh"), plot_desc("PCA finds the directions where samples vary the most, UMAP groups similar samples together."))),
+                                           nav_panel("PCA / UMAP", card(full_screen = TRUE, card_header("PCA / UMAP (interactive)"), radioButtons("proj_method", NULL, choices = c("PCA", "UMAP"), inline = TRUE), plotlyOutput("tn_projection", height = "54vh"), plot_desc("PCA finds the directions where samples vary the most, UMAP groups similar samples together."))),
                                            nav_panel("Patient similarity network", card(full_screen = TRUE, card_header("Patient similarity network"), plotOutput("tn_network", height = "58vh"), plot_desc("Patients are represented as dots, with lines connecting the most similar patients based on Pearson correlation of their DNA methylation profiles."))))),
                                          
                                          # 4. Genome-wide Profile
