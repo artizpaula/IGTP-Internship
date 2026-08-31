@@ -56,7 +56,8 @@ bin_table_columns <- list(list(id = "bin_id", label = "Bin ID", group = "Bin"),
                           list(id = "cpg_methylation_pct",label = "CpG Meth %", group = "Genomic Content", digits = 2),
                           list(id = "gene_count", label = "Gene Count",group = "Gene Annotation (COSMIC Cancer Gene Census)"),
                           list(id = "gene_names", label = "Genes", group = "Gene Annotation (COSMIC Cancer Gene Census)"),
-                          list(id = "gene_ids", label = "Gene IDs (COSMIC)", group = "Gene Annotation (COSMIC Cancer Gene Census)"))
+                          list(id = "gene_ids", label = "Gene IDs (COSMIC)", group = "Gene Annotation (COSMIC Cancer Gene Census)"),
+                          list(id = "quick_links_html", label = "Quick Links", group = "External Resources", html = TRUE, plain_id = "quick_links_text"))
 
 # two-row header for the Bin Table DT (htmltools to make it fancier)
 bin_table_header_sketch <- local({
@@ -139,6 +140,9 @@ build_display_bin_table <- function(df, columns = bin_table_columns, plain = FAL
   col_ids <- vapply(columns, function(c) c$id, character(1))
   out <- df[, col_ids, drop = FALSE]
   for (i in seq_along(columns)) {
+    if (plain && !is.null(columns[[i]]$plain_id)) {
+      out[[i]] <- df[[columns[[i]]$plain_id]]
+    }
     if (!is.null(columns[[i]]$digits)) {
       out[[i]] <- round(out[[i]], columns[[i]]$digits)
     } else if (is.character(out[[i]])) {
@@ -226,6 +230,9 @@ genome_wide_bins$manhattan_category <- factor(genome_wide_bins$manhattan_categor
 # options for the "which feature" dropdown on the heatmap tab
 heatmap_feature_choices <- c("Methylation Values (No Association)" = "none", "Relapse"  = "Recaiguda", "BRAF status" = "BRAF", "KRAS status" = "KRAS", "TP53 status" = "TP53",
                              "MSI/MSS status"= "MSS","Sex" = "sexe","Stage" = "estadi2")
+
+# same clinical variables, but for the similarity network's node colour
+network_color_choices <- heatmap_feature_choices[heatmap_feature_choices != "none"]
 
 # turns the 0/1 codes into words like "Wild-type"/"Mutant" so the tables read better
 recode_binary <- function(x, labels = c("0" = "Wild-type", "1" = "Mutant")) {
@@ -558,6 +565,70 @@ zoom_view <- function(start, end, chr_len, factor, min_width = 2e6) {
   new_start <- max(1, new_start)
   list(start = round(new_start), end = round(new_end))}
 
+# builds https URLs to external genomic resources for a given region
+build_external_links <- function(chr, start, end, gene = NA_character_, genome_build = "hg19") {
+  chr_lab <- paste0("chr", chr)
+  ensembl_sub <- if (identical(genome_build, "hg19")) "grch37." else ""
+  
+  ucsc_url <- paste0("https://genome.ucsc.edu/cgi-bin/hgTracks?db=", genome_build,"&position=", chr_lab, "%3A", format(round(start), scientific = FALSE),
+                     "-", format(round(end), scientific = FALSE))
+  ensembl_url <- paste0("https://", ensembl_sub, "ensembl.org/Homo_sapiens/Location/View?r=",chr, "%3A", format(round(start), scientific = FALSE), "-", format(round(end), scientific = FALSE) )
+  # TCGA colorectal cohorts (COAD = colon, READ = rectal adenocarcinoma) via the GDC portal
+  tcga_url <- "https://portal.gdc.cancer.gov/exploration?filters=%7B%22op%22%3A%22in%22%2C%22content%22%3A%7B%22field%22%3A%22cases.project.project_id%22%2C%22value%22%3A%5B%22TCGA-COAD%22%2C%22TCGA-READ%22%5D%7D%7D"
+  
+  links <- list(UCSC = ucsc_url, Ensembl = ensembl_url, TCGA = tcga_url)
+  
+  first_gene <- trimws(strsplit(as.character(gene)[1], "[,;]")[[1]])[1]
+  if (!is.null(first_gene) && !is.na(first_gene) && nzchar(first_gene)) {
+    links$Gene_info <- paste0("https://www.ncbi.nlm.nih.gov/gene/?term=", utils::URLencode(first_gene), "%5Bsym%5D+AND+human%5Borgn%5D")
+  }
+  links
+}
+
+# Compact per-bin "Quick Links" HTML (UCSC, Ensembl, TCGA)
+build_bin_quick_links_html <- function(chr, start, end, gene) {
+  links <- build_external_links(chr, start, end, gene)
+  tag_list <- list(
+    tags$a(bs_icon("box-arrow-up-right", size = "0.8em"), " UCSC",
+           href = links$UCSC, target = "_blank", rel = "noopener noreferrer",
+           style = "margin-right:10px; font-size:12px; color:#2b6cb0; text-decoration:none; white-space:nowrap;"),
+    tags$a(bs_icon("box-arrow-up-right", size = "0.8em"), " Ensembl",
+           href = links$Ensembl, target = "_blank", rel = "noopener noreferrer",
+           style = "margin-right:10px; font-size:12px; color:#0e7c86; text-decoration:none; white-space:nowrap;"),
+    tags$a(bs_icon("box-arrow-up-right", size = "0.8em"), " TCGA",
+           href = links$TCGA, target = "_blank", rel = "noopener noreferrer",
+           style = "margin-right:10px; font-size:12px; color:#d1495b; text-decoration:none; white-space:nowrap;")
+  )
+  if (!is.null(links$Gene_info)) {
+    tag_list <- c(tag_list, list(
+      tags$a(bs_icon("box-arrow-up-right", size = "0.8em"), " NCBI Gene",
+             href = links$Gene_info, target = "_blank", rel = "noopener noreferrer",
+             style = "font-size:12px; color:#8a5a00; text-decoration:none; white-space:nowrap;")
+    ))
+  }
+  as.character(tagList(tag_list))
+}
+bin_table$quick_links_html <- mapply(build_bin_quick_links_html,
+                                     bin_table$chr, bin_table$bin_start, bin_table$bin_end, bin_table$gene_names,
+                                     SIMPLIFY = TRUE
+)
+
+# plain-text equivalent of the column above (no HTML), used only for the CSV download
+build_bin_quick_links_text <- function(chr, start, end, gene) {
+  links <- build_external_links(chr, start, end, gene)
+  parts <- c(paste0("UCSC: ", links$UCSC),
+             paste0("Ensembl: ", links$Ensembl),
+             paste0("TCGA: ", links$TCGA)
+  )
+  if (!is.null(links$Gene_info)) parts <- c(parts, paste0("NCBI Gene: ", links$Gene_info))
+  paste(parts, collapse = " | ")
+}
+bin_table$quick_links_text <- mapply(
+  build_bin_quick_links_text,
+  bin_table$chr, bin_table$bin_start, bin_table$bin_end, bin_table$gene_names,
+  SIMPLIFY = TRUE
+)
+
 # Plot description function
 plot_desc <- function(...) {
   tags$div(style = "font-size:12px; color:#5c7182; margin-top:8px; padding-top:8px; border-top:1px solid #e3e8ec; line-height:1.45;", ...)
@@ -592,13 +663,13 @@ ui <- page_sidebar(title = div(style = "display:flex; justify-content:space-betw
                                          nav_panel("Overview", uiOutput("overview_content")),
                                          
                                          # 2. Genome Browser
-                                         nav_panel("Genome Browser", div(style = "font-size:13px; color:#6c757d; margin-bottom:10px;", "Browse methylation across the whole genome: pick a chromosome, zoom in/out, or search by coordinates, bin ID, or gene name."), card(card_header("All chromosomes, click a point to jump to that chromosome"), plotlyOutput("genome_overview_plot", height = "420px")), card(card_header(textOutput("browser_position_header", inline = TRUE)), div(style = "display:flex; flex-wrap:wrap; gap:0px; align-items:center", div(style = "display:flex; gap:6px; align-items:center; flex:1 1 320px; min-width:280px;", textInput("browser_search", label = NULL, placeholder = "e.g. 12:25000000-26000000, 12_25000000, or KRAS", width = "100%"), actionButton("browser_search_go", NULL, icon = bs_icon("search"), class = "btn-sm btn-outline-secondary")), div(style = "display:flex; gap:4px; align-items:center;", actionButton("prev_chr", NULL, icon = bs_icon("chevron-left"), class = "btn-sm btn-outline-secondary"), selectInput("browser_chr", NULL, choices = chrom_list, selected = "1", width = "90px"), actionButton("next_chr", NULL, icon = bs_icon("chevron-right"), class = "btn-sm btn-outline-secondary")), div(style = "display:flex; gap:4px;", actionButton("zoom_in", NULL, icon = bs_icon("zoom-in"), class = "btn-sm btn-outline-secondary"), actionButton("zoom_out", NULL, icon = bs_icon("zoom-out"), class = "btn-sm btn-outline-secondary"), actionButton("zoom_reset", "Whole chromosome", icon = bs_icon("arrow-counterclockwise"), class = "btn-sm btn-outline-secondary"))), plotlyOutput("browser_chr_plot", height = "560px"), plot_desc("Tumor vs Normal methylation line-by-line across one chromosome."), tags$div("Tip: bins currently in your sidebar selection are outlined on the plot above. You can also drag directly on the plot to zoom, and double-click it to reset.", style = "font-size:11px; color:#7d92a3; margin-top:6px;"))),
+                                         nav_panel("Genome Browser", div(style = "font-size:13px; color:#6c757d; margin-bottom:10px;", "Browse methylation across the whole genome: pick a chromosome, zoom in/out, or search by coordinates, bin ID, or gene name."), card(card_header("All chromosomes, click a point to jump to that chromosome"), plotlyOutput("genome_overview_plot", height = "420px")), card(card_header(textOutput("browser_position_header", inline = TRUE)), div(style = "display:flex; flex-wrap:wrap; gap:0px; align-items:center", div(style = "display:flex; gap:6px; align-items:center; flex:1 1 320px; min-width:280px;", textInput("browser_search", label = NULL, placeholder = "e.g. 12:25000000-26000000, 12_25000000, or KRAS", width = "100%"), actionButton("browser_search_go", NULL, icon = bs_icon("search"), class = "btn-sm btn-outline-secondary")), div(style = "display:flex; gap:4px; align-items:center;", actionButton("prev_chr", NULL, icon = bs_icon("chevron-left"), class = "btn-sm btn-outline-secondary"), selectInput("browser_chr", NULL, choices = chrom_list, selected = "1", width = "90px"), actionButton("next_chr", NULL, icon = bs_icon("chevron-right"), class = "btn-sm btn-outline-secondary")), div(style = "display:flex; gap:4px;", actionButton("zoom_in", NULL, icon = bs_icon("zoom-in"), class = "btn-sm btn-outline-secondary"), actionButton("zoom_out", NULL, icon = bs_icon("zoom-out"), class = "btn-sm btn-outline-secondary"), actionButton("zoom_reset", "Whole chromosome", icon = bs_icon("arrow-counterclockwise"), class = "btn-sm btn-outline-secondary"))), plotlyOutput("browser_chr_plot", height = "560px"), plot_desc("Tumor vs Normal methylation line-by-line across one chromosome."), tags$div("Tip: bins currently in your sidebar selection are outlined on the plot above. You can also drag directly on the plot to zoom, and double-click it to reset.", style = "font-size:11px; color:#7d92a3; margin-top:6px;")), card(card_header("External Resources for This Region"), uiOutput("browser_external_links"))),
                                          
                                          # 3. Tumor vs Normal
                                          nav_panel("Tumor vs. Normal", navset_tab(
                                            nav_panel("Methylation density", card(full_screen = TRUE, card_header("Methylation density (Tumor vs Normal)"), plotOutput("tn_density", height = "58vh"), plot_desc("Shape of the methylation distribution, Tumor vs Normal overlapped."))),
                                            nav_panel("PCA / UMAP", card(full_screen = TRUE, card_header("PCA / UMAP (interactive)"), radioButtons("proj_method", NULL, choices = c("PCA", "UMAP"), inline = TRUE), plotlyOutput("tn_projection", height = "54vh"), plot_desc("PCA finds the directions where samples vary the most, UMAP groups similar samples together."))),
-                                           nav_panel("Patient similarity network", card(full_screen = TRUE, card_header("Patient similarity network"), plotOutput("tn_network", height = "58vh"), plot_desc("Patients are represented as dots, with lines connecting the most similar patients based on Pearson correlation of their DNA methylation profiles."))))),
+                                           nav_panel("Patient similarity network", card(full_screen = TRUE, card_header("Patient similarity network"), div(style = "max-width:500px; margin-bottom:10px;", selectInput("network_color_feature", "Colour nodes by:", choices = network_color_choices, selected = "MSS")), plotOutput("tn_network", height = "54vh"), plot_desc("Patients are represented as dots, with lines connecting the most similar patients based on Pearson correlation of their DNA methylation profiles."))))),
                                          
                                          # 4. Genome-wide Profile
                                          nav_panel("Genome-wide Profile", div(style = "font-size:13px; color:#6c757d; margin-bottom:10px;","Genome-wide Tumor vs. Normal methylation across 1 Mb bins. Significant bins (q < 0.05) and top 5% extreme differences are flagged. Hover for details; drag to zoom, double-click to reset, and use the camera icon to export."),
@@ -996,6 +1067,18 @@ server <- function(input, output, session) {
            " (", format_mb_label(nav$end - nav$start), ")")
   })
   
+  # quick access to UCSC/Ensembl/TCGA for whatever region is currently shown in the genome browser
+  output$browser_external_links <- renderUI({
+    req(nav$chr, nav$start, nav$end)
+    region_links <- build_external_links(nav$chr, nav$start, nav$end)
+    
+    div(style = "display:flex; gap:16px; flex-wrap:wrap; font-size:13px;",
+        tags$a(bs_icon("box-arrow-up-right"), " UCSC Genome Browser", href = region_links$UCSC, target = "_blank", rel = "noopener noreferrer"),
+        tags$a(bs_icon("box-arrow-up-right"), " Ensembl", href = region_links$Ensembl, target = "_blank", rel = "noopener noreferrer"),
+        tags$a(bs_icon("box-arrow-up-right"), " TCGA", href = region_links$TCGA, target = "_blank", rel = "noopener noreferrer")
+    )
+  })
+  
   browser_view_bins <- reactive({
     req(nav$chr, nav$start, nav$end)
     df <- bin_table[bin_table$chr == nav$chr & bin_table$bin_end >= nav$start & bin_table$bin_start <= nav$end, ]
@@ -1113,15 +1196,19 @@ server <- function(input, output, session) {
     mat <- patient_shift_matrix()
     validate(need(!is.null(mat), "Not enough overlapping data across patients for the selected bins to build a similarity network."))
     
+    feature <- input$network_color_feature
+    if (is.null(feature) || !feature %in% names(patient_annotation)) feature <- "MSS"
+    
     cor_mat <- stats::cor(t(mat)) # Pearson correlation for similarity between patients
     layout_xy <- tryCatch(stats::cmdscale(stats::as.dist(1 - cor_mat), k = 2), error = function(e) NULL)
     validate(need(!is.null(layout_xy), "Couldn't compute a layout for the current selection."))
     
     nodes <- data.frame(patient_id = rownames(mat), x = layout_xy[, 1], y = layout_xy[, 2], stringsAsFactors = FALSE)
     nodes <- merge(nodes, patient_annotation, by = "patient_id", all.x = TRUE)
-    nodes$mss_label <- as.character(nodes$MSS)
-    nodes$mss_label[is.na(nodes$mss_label)] <- "unknown"
-    mss_palette <- categorical_palette(nodes$mss_label)
+    nodes$color_label <- as.character(nodes[[feature]])
+    nodes$color_label[is.na(nodes$color_label)] <- "unknown"
+    color_palette <- categorical_palette(nodes$color_label)
+    feature_label <- names(network_color_choices)[network_color_choices == feature]
     
     # only draw an edge between the most similar pairs of patients (top 15% by correlation), keeps the plot readable
     ids <- rownames(mat)
@@ -1145,9 +1232,9 @@ server <- function(input, output, session) {
         data = edge_df, aes(x = x_from, y = y_from, xend = x_to, yend = y_to, alpha = corr),
         color = "#7d92a3", linewidth = 0.4, show.legend = FALSE)
     }
-    p + geom_point(data = nodes, aes(x = x, y = y, fill = mss_label), shape = 21, size = 6, color = "#0b2436", stroke = 0.6) +
+    p + geom_point(data = nodes, aes(x = x, y = y, fill = color_label), shape = 21, size = 6, color = "#0b2436", stroke = 0.6) +
       geom_text(data = nodes, aes(x = x, y = y, label = patient_id), vjust = -1.4, size = 3, color = "#16324f") +
-      scale_fill_manual(values = mss_palette, name = "MSS status") +
+      scale_fill_manual(values = color_palette, name = feature_label) +
       labs( x = "Dimension 1", y = "Dimension 2", title = "Patient similarity network (methylation-shift correlation)", subtitle = region_label()) +
       theme_minimal(base_size = 12) +
       theme(legend.position = "bottom", panel.grid.minor = element_blank())
@@ -1353,11 +1440,13 @@ server <- function(input, output, session) {
     pct_cols   <- intersect(c("Alu Meth %", "CpG Meth %"), names(display_df))
     count_cols <- intersect(c("Alu Count", "CpG Count", "Gene Count"), names(display_df))
     delta_col  <- "\u0394 (Tumor \u2212 Normal)"
+    links_col  <- which(names(display_df) == "Quick Links")
     
     dt <- datatable(display_df,
                     container = bin_table_header_sketch,
                     rownames = FALSE,
                     class = "stripe hover compact",
+                    escape = if (length(links_col) > 0) -links_col else TRUE,
                     options = list(scrollX = TRUE, pageLength = 15, lengthMenu = list(c(10, 15, 25, 50, -1), c("10", "15", "25", "50", "All")), dom = "ltip", language = list(search = "Quick search:", lengthMenu = "Show _MENU_ bins per page"), columnDefs = list(list(className = "dt-center", targets = "_all"))))
     
     if (length(meth_cols) > 0) dt <- formatRound(dt, meth_cols, 3)
