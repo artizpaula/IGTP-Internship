@@ -1,7 +1,7 @@
-# Promoter annotation: match promoter reference coordinates 
+# Promoter annotation: match promoter reference coordinates against bins.
 
 # Before running: download a BED file from UCSC Table Browser (hg19, track = NCBI RefSeq, output format = BED, "upstream by 1000 bases"), then convert
-# it to a TSV with columns promoter_name / chr / start / end and save it as Promoter_reference_GRCh37.tsv
+# it to a TSV with columns promoter_name / chr / start / end and save it as Promoter_reference_GRCh37.tsv in your Archivo dataset folder.
 
 # 1. Read the promoter reference file
 
@@ -13,18 +13,18 @@ read_promoter_reference <- function(promoter_tsv_path) {
   if (length(missing_cols) > 0) {
     stop("Promoter reference is missing required column(s): ", paste(missing_cols, collapse = ", "))
   }
-
+  
   promoters$promoter_name <- trimws(promoters$promoter_name)
   promoters$chr <- trimws(as.character(promoters$chr))
   promoters$chr <- sub("^chr", "", promoters$chr, ignore.case = TRUE) # normalize "chr1" -> "1" to match bin_table$chr
   promoters$start <- suppressWarnings(as.numeric(promoters$start))
   promoters$end   <- suppressWarnings(as.numeric(promoters$end))
-
+  
   usable <- !is.na(promoters$start) & !is.na(promoters$end) &
     nzchar(promoters$promoter_name) & nzchar(promoters$chr)
   skipped_missing_coords <- sum(!usable)
   promoter_reference <- promoters[usable, c("promoter_name", "chr", "start", "end")]
-
+  
   # guard against reversed start/end so the overlap rule (start <= end) always holds
   swap <- promoter_reference$start > promoter_reference$end
   if (any(swap)) {
@@ -32,14 +32,14 @@ read_promoter_reference <- function(promoter_tsv_path) {
     promoter_reference$start[swap] <- promoter_reference$end[swap]
     promoter_reference$end[swap] <- tmp
   }
-
+  
   attr(promoter_reference, "skipped_rows") <- skipped_missing_coords
   promoter_reference
 }
 
 # 2. Bin <-> promoter coordinate-overlap join
 
-annotate_bins_with_promoters <- function(bin_table, promoter_reference, id_sep = ";") {
+annotate_bins_with_promoters <- function(bin_table, promoter_reference) {
   required_bin_cols <- c("bin_id", "chr", "bin_start", "bin_end")
   missing_bin_cols <- setdiff(required_bin_cols, names(bin_table))
   if (length(missing_bin_cols) > 0) {
@@ -50,12 +50,12 @@ annotate_bins_with_promoters <- function(bin_table, promoter_reference, id_sep =
   if (length(missing_prom_cols) > 0) {
     stop("promoter_reference is missing required column(s): ", paste(missing_prom_cols, collapse = ", "))
   }
-
+  
   bins <- bin_table[, c("bin_id", "chr", "bin_start", "bin_end")]
   bins$chr <- trimws(as.character(bins$chr))
   proms <- promoter_reference
   proms$chr <- trimws(as.character(proms$chr))
-
+  
   # Cartesian join within each chromosome
   candidates <- merge(bins, proms, by = "chr", all = FALSE)
   overlap <- candidates$start <= candidates$bin_end & candidates$end >= candidates$bin_start
@@ -63,29 +63,22 @@ annotate_bins_with_promoters <- function(bin_table, promoter_reference, id_sep =
                                          "promoter_name", "start", "end")]
   rownames(promoter_hits) <- NULL
   promoter_hits <- promoter_hits[order(promoter_hits$bin_id, promoter_hits$promoter_name), ]
-
+  
   if (nrow(promoter_hits) > 0) {
-    per_bin <- aggregate(promoter_name ~ bin_id, data = promoter_hits,
-                         FUN = function(x) length(unique(x)))
-    names(per_bin)[2] <- "promoter_count"
-    names_per_bin <- aggregate(promoter_name ~ bin_id, data = promoter_hits,
-                               FUN = function(x) paste(sort(unique(x)), collapse = id_sep))
-    names(names_per_bin)[2] <- "promoter_names"
-    promoter_summary <- merge(per_bin, names_per_bin, by = "bin_id", all = TRUE)
+    promoter_summary <- aggregate(promoter_name ~ bin_id, data = promoter_hits,
+                                  FUN = function(x) length(unique(x)))
+    names(promoter_summary)[2] <- "promoter_count"
   } else {
-    promoter_summary <- data.frame(bin_id = character(0), promoter_count = integer(0),
-                                   promoter_names = character(0))
+    promoter_summary <- data.frame(bin_id = character(0), promoter_count = integer(0))
   }
-
-  # drop any old/stale versions of these columns before merging in the new ones
+  
+  # drop any old/stale version of this column before merging in the new one
   bin_table$promoter_count <- NULL
-  bin_table$promoter_names <- NULL
-
+  
   bin_table <- merge(bin_table, promoter_summary, by = "bin_id", all.x = TRUE, sort = FALSE)
   bin_table$promoter_count[is.na(bin_table$promoter_count)] <- 0L
   bin_table$promoter_count <- as.integer(bin_table$promoter_count)
-  # promoter_names stays NA on purpose for bins with no overlapping promoter
-
+  
   list(bin_table = bin_table, promoter_hits = promoter_hits)
 }
 
@@ -98,28 +91,18 @@ validate_promoter_bin_annotation <- function(bin_table, promoter_reference, prom
   if (any(bad_chr)) {
     stop(sum(bad_chr), " promoter-bin match(es) span different chromosomes - this should never happen.")
   }
-
+  
   bad_overlap <- !(promoter_hits$start <= promoter_hits$bin_end & promoter_hits$end >= promoter_hits$bin_start)
   if (any(bad_overlap)) {
     stop(sum(bad_overlap), " promoter-bin pair(s) violate the overlap rule ",
          "(start <= bin_end AND end >= bin_start).")
   }
-
-  listed_counts <- ifelse(
-    is.na(bin_table$promoter_names) | !nzchar(bin_table$promoter_names), 0L,
-    lengths(strsplit(bin_table$promoter_names, ";", fixed = TRUE))
-  )
-  mismatched <- bin_table$promoter_count != listed_counts
-  if (any(mismatched)) {
-    stop(sum(mismatched), " bin(s) have promoter_count that disagrees with the ",
-         "number of promoters actually listed in promoter_names.")
-  }
-
+  
   n_bins <- nrow(bin_table)
   n_bins_with_promoter <- sum(bin_table$promoter_count > 0)
   n_ref_promoters <- nrow(promoter_reference)
   matched_promoters <- unique(promoter_hits$promoter_name)
-
+  
   message("Promoter-bin annotation validated: ", nrow(promoter_hits),
           " overlapping pair(s) found, 0 rule violations.")
   message(n_bins_with_promoter, " / ", n_bins, " bins have >=1 promoter; ",
@@ -128,7 +111,7 @@ validate_promoter_bin_annotation <- function(bin_table, promoter_reference, prom
   if (!is.null(skipped) && skipped > 0) {
     message(skipped, " row(s) in the promoter reference were skipped (missing name/coordinates).")
   }
-
+  
   invisible(list(n_bins = n_bins, n_bins_with_promoter = n_bins_with_promoter,
-                n_reference_promoters = n_ref_promoters, n_matched_promoters = length(matched_promoters)))
+                 n_reference_promoters = n_ref_promoters, n_matched_promoters = length(matched_promoters)))
 }

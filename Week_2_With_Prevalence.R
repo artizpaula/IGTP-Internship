@@ -4,7 +4,7 @@
 library(jsonlite)   # for reading the JSON files
 library(data.table) # fast reading/aggregation for the big raw per-CpG methylation tables
 
-setwd("/Users/paulaartizduenas/Desktop/Project/R Scripts") # Paths (change to personal pathways where Alus_and_CpGs.R, Promoter_Annotation.R and Gene_Annotation.R are located)
+setwd("/Users/paulaartizduenas/Desktop/Project/R Scripts") # Paths (chnage to personal pathways where Alus_and_CpGs.R and Gene_Annotation.R are located)
 # CpG/Alu-per-bin counting functions, used in section 5b below
 source("Alus_and_CpGs.R")
 # Gene annotation functions (bin <-> gene coordinate overlap), used in section 5c below
@@ -218,9 +218,8 @@ if (!file.exists(cosmic_tsv_path)) {
 
 if (!file.exists(promoter_tsv_path)) {
   warning("Promoter annotation source file not found (looked for ", promoter_tsv_path,
-          "); bin_annotation$promoter_count/promoter_names will be empty.")
+          "); bin_annotation$promoter_count will be empty.")
   bin_annotation$promoter_count <- 0L
-  bin_annotation$promoter_names <- NA_character_
 } else {
   promoter_reference <- read_promoter_reference(promoter_tsv_path)
   promoter_annotation_result <- annotate_bins_with_promoters(bin_annotation, promoter_reference)
@@ -229,7 +228,7 @@ if (!file.exists(promoter_tsv_path)) {
   write.csv(promoter_annotation_result$promoter_hits, file.path(output_dir, "Promoter_bin_overlaps.csv"), row.names = FALSE)
 }
 
-bin_annotation <- bin_annotation[, c("bin_id", "chr", "bin_position", "bin_start", "bin_end", "n_cpg", "n_alu", "alu_methylation_pct", "cpg_methylation_pct", "gene_count", "gene_ids", "gene_names", "genes", "promoter_count", "promoter_names", "functional_annotation")]
+bin_annotation <- bin_annotation[, c("bin_id", "chr", "bin_position", "bin_start", "bin_end", "n_cpg", "n_alu", "alu_methylation_pct", "cpg_methylation_pct", "gene_count", "gene_ids", "gene_names", "genes", "promoter_count", "functional_annotation")]
 write.csv(bin_annotation, file.path(output_dir, "Bin_annotation_template.csv"), row.names = FALSE)
 
 # 6. Tumor/Normal pairing and paired differences
@@ -365,7 +364,7 @@ bin_table <- bin_table[, c("bin_id", "chr", "bin_position", "bin_start", "bin_en
                            "sd_methylation_tumor", "sd_methylation_normal", "tumor_normal_diff",
                            "n_cpg", "n_alu", "alu_methylation_pct", "cpg_methylation_pct",
                            "gene_count", "gene_ids", "gene_names", "genes",
-                           "promoter_count", "promoter_names", "functional_annotation",
+                           "promoter_count", "functional_annotation",
                            "n_present_Normal", "n_present_Tumor", "n_total_Normal", "n_total_Tumor",
                            "prevalence_tumor", "prevalence_normal",
                            "n_samples_total", "n_present_total", "prevalence_total")]

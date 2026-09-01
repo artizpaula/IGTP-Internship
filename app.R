@@ -42,6 +42,9 @@ gene_annotation_available <- any(!is.na(bin_table$gene_names))
 # list of every gene symbol that shows up somewhere in the table
 all_gene_names <- sort(unique(trimws(unlist(strsplit(na.omit(bin_table$gene_names), ";", fixed = TRUE)))))
 
+# whether any bin actually ended up with promoter annotation
+promoter_annotation_available <- "promoter_count" %in% names(bin_table) && any(bin_table$promoter_count > 0, na.rm = TRUE)
+
 # columns to show in the Bin Table tab, in the order I want them
 bin_table_columns <- list(list(id = "bin_id", label = "Bin ID", group = "Bin"),
                           list(id = "bin_coordinates", label = "Coordinates",group = "Bin"),
@@ -57,6 +60,7 @@ bin_table_columns <- list(list(id = "bin_id", label = "Bin ID", group = "Bin"),
                           list(id = "gene_count", label = "Gene Count",group = "Gene Annotation (COSMIC Cancer Gene Census)"),
                           list(id = "gene_names", label = "Genes", group = "Gene Annotation (COSMIC Cancer Gene Census)"),
                           list(id = "gene_ids", label = "Gene IDs (COSMIC)", group = "Gene Annotation (COSMIC Cancer Gene Census)"),
+                          list(id = "promoter_count", label = "Promoter Count", group = "Promoter Annotation"),
                           list(id = "quick_links_html", label = "Quick Links", group = "External Resources", html = TRUE, plain_id = "quick_links_text"))
 
 # two-row header for the Bin Table DT (htmltools to make it fancier)
@@ -83,7 +87,8 @@ bin_table_filters <- list(list(id = "mean_methylation_tumor", label = "Mean Meth
                           list(id = "n_alu", label = "Alu Count", op = ">=", step = 1),
                           list(id = "alu_methylation_pct", label = "Alu Methylation %", op = ">=", step = 0.1),
                           list(id = "cpg_methylation_pct", label = "CpG Methylation %", op = ">=", step = 0.1),
-                          list(id = "gene_count", label = "Gene Count", op = ">=", step = 1))
+                          list(id = "gene_count", label = "Gene Count", op = ">=", step = 1),
+                          list(id = "promoter_count", label = "Promoter Count", op = ">=", step = 1))
 
 # makes one slider per filter, using min/max from the actual data so the range makes sense
 build_bin_table_filter_inputs <- function(filters, df) {
@@ -728,7 +733,8 @@ ui <- page_sidebar(title = div(style = "display:flex; justify-content:space-betw
                                                                                                                                                                                                                           tags$hr(style = "border-top:1px solid #eef2f5; margin:18px 0 14px 0;"),
                                                                                                                                                                                                                           div(style = "display:flex; justify-content:flex-end;", actionButton("binfilter_reset", "Reset all filters", icon = bs_icon("arrow-counterclockwise"), class = "btn-sm btn-outline-danger", style = "font-size:12px; border-radius:6px; padding:5px 14px;"))) ),
                                                                      div(style = "display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:15px;", downloadButton( "bintable_download", "Download CSV Data", icon = icon("download"), class = "btn-lg btn-primary", style = "font-weight: 600; padding: 10px 22px; font-size: 15px; border-radius: 6px;"),
-                                                                         uiOutput("bintable_gene_note")),
+                                                                         uiOutput("bintable_gene_note"),
+                                                                         uiOutput("bintable_promoter_note")),
                                                                      div(style = "margin-top:4px;", DTOutput("bintable"))))),
                    div(style = "display:flex; align-items:center; justify-content:center; gap:18px; margin-top:24px; padding:16px 0; border-top:1px solid #dde3e8; color:#6c757d; font-size:13px;", tags$span("Paula Artiz Dueñas, Bioinformatics Student", style = "margin-left:10px;")))
 
@@ -1067,7 +1073,7 @@ server <- function(input, output, session) {
            " (", format_mb_label(nav$end - nav$start), ")")
   })
   
-  # quick access to UCSC/Ensembl/TCGA for whatever region is currently shown in the genome browser
+  # quick access to UCSC / Ensembl / TCGA for whatever region is currently shown in the genome browser
   output$browser_external_links <- renderUI({
     req(nav$chr, nav$start, nav$end)
     region_links <- build_external_links(nav$chr, nav$start, nav$end)
@@ -1431,6 +1437,14 @@ server <- function(input, output, session) {
     if (!gene_annotation_available) {
       return(div(style = "font-size:12px; color:#a34; background:#fdf1ef; border:1px solid #f0d6d1; border-radius:8px; padding:8px 14px; max-width:520px;",
                  bs_icon("exclamation-triangle")," Gene annotation source files were not found when the app started"))
+    }
+  })
+  
+  # note shown if promoter annotation couldn't be computed at all
+  output$bintable_promoter_note <- renderUI({
+    if (!promoter_annotation_available) {
+      return(div(style = "font-size:12px; color:#a34; background:#fdf1ef; border:1px solid #f0d6d1; border-radius:8px; padding:8px 14px; max-width:520px;",
+                 bs_icon("exclamation-triangle")," Promoter annotation source file was not found when the app started"))
     }
   })
   

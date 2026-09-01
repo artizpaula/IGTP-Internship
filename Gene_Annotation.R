@@ -10,8 +10,8 @@ read_gene_reference <- function(cosmic_tsv_path, crc_gene_list_path = NULL) {
     stop("COSMIC census is missing required column(s): ", paste(missing_cols, collapse = ", "))
   }
   
-  cosmic$GENE_SYMBOL  <- trimws(cosmic$GENE_SYMBOL)
-  cosmic$CHROMOSOME   <- trimws(as.character(cosmic$CHROMOSOME))
+  cosmic$GENE_SYMBOL<- trimws(cosmic$GENE_SYMBOL)
+  cosmic$CHROMOSOME <- trimws(as.character(cosmic$CHROMOSOME))
   cosmic$GENOME_START <- suppressWarnings(as.numeric(cosmic$GENOME_START))
   cosmic$GENOME_STOP  <- suppressWarnings(as.numeric(cosmic$GENOME_STOP))
   
@@ -29,8 +29,8 @@ read_gene_reference <- function(cosmic_tsv_path, crc_gene_list_path = NULL) {
     wanted_genes <- unique(toupper(cosmic$GENE_SYMBOL))
   }
   
-  cosmic_upper <- toupper(cosmic$GENE_SYMBOL)
-  matched_idx  <- match(wanted_genes, cosmic_upper)
+  cosmic_upper<- toupper(cosmic$GENE_SYMBOL)
+  matched_idx <- match(wanted_genes, cosmic_upper)
   
   found <- !is.na(matched_idx)
   has_coords <- found
@@ -57,8 +57,7 @@ read_gene_reference <- function(cosmic_tsv_path, crc_gene_list_path = NULL) {
   
   attr(gene_reference, "skipped_genes") <- list(
     not_in_census = wanted_genes[!found],
-    missing_coordinates = wanted_genes[found & !has_coords]
-  )
+    missing_coordinates = wanted_genes[found & !has_coords])
   
   gene_reference
 }
@@ -108,7 +107,7 @@ annotate_bins_with_genes <- function(bin_table, gene_reference, id_sep = ";") {
   
   # drop any old/stale versions of these columns before merging in the new ones
   bin_table$gene_count <- NULL
-  bin_table$gene_ids   <- NULL
+  bin_table$gene_ids <- NULL
   bin_table$gene_names <- NULL
   
   bin_table <- merge(bin_table, gene_summary, by = "bin_id", all.x = TRUE, sort = FALSE)
