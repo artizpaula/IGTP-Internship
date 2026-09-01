@@ -4,11 +4,13 @@
 library(jsonlite)   # for reading the JSON files
 library(data.table) # fast reading/aggregation for the big raw per-CpG methylation tables
 
-setwd("/Users/paulaartizduenas/Desktop/Project/R Scripts") # Paths (chnage to personal pathways where Alus_and_CpGs.R and Gene_Annotation.R are located)
+setwd("/Users/paulaartizduenas/Desktop/Project/R Scripts") # Paths (change to personal pathways where Alus_and_CpGs.R, Promoter_Annotation.R and Gene_Annotation.R are located)
 # CpG/Alu-per-bin counting functions, used in section 5b below
 source("Alus_and_CpGs.R")
 # Gene annotation functions (bin <-> gene coordinate overlap), used in section 5c below
 source("Gene_Annotation.R")
+# Promoter annotation functions (bin <-> promoter coordinate overlap), used in section 5d below
+source("Promoter_Annotation.R")
 
 # Directory paths (personal paths)
 
@@ -23,7 +25,7 @@ source("Gene_Annotation.R")
 #     Alus_CpGs/
 #     Archivo/
 
-# Paths
+# Paths (chnage to personal pathways)
 dataset_metadata <- "/Users/paulaartizduenas/Desktop/Project/Dataset/Metadata"
 dataset_bins <- "/Users/paulaartizduenas/Desktop/Project/Dataset/Bins"
 dataset_alus_cpgs <- "/Users/paulaartizduenas/Desktop/Project/Dataset/Alus_CpGs"
@@ -38,6 +40,10 @@ dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 # Gene annotation source file (from archive.zip: COSMIC Cancer Gene Census)
 cosmic_tsv_path    <- file.path(dataset_gene_annotation, "Cosmic_CancerGeneCensus_Tsv_v101_GRCh37", "Cosmic_CancerGeneCensus_v101_GRCh37.tsv")
 crc_gene_list_path <- file.path(dataset_gene_annotation, "CRC_curated_genes.txt")
+
+# Promoter reference file (e.g. exported from UCSC Table Browser or the Ensembl
+# Regulatory Build, GRCh37, columns: promoter_name, chr, start, end)
+promoter_tsv_path  <- file.path(dataset_gene_annotation, "Promoter_reference_GRCh37.tsv")
 
 # 1. Metadata
 
@@ -138,7 +144,7 @@ bin_na_summary <- merge(n_samples_per_bin, n_na_per_bin, by = c("chr", "bin_posi
 # distinguish biological absence from sample-specific missing values:
 # complete = no NAs at all, sample_specific_missing = missing only in some samples, structural_gap = missing in every sample
 bin_na_summary$bin_status <- ifelse(bin_na_summary$n_na == 0, "complete",
-  ifelse(bin_na_summary$n_na == bin_na_summary$n_samples, "structural_gap", "sample_specific_missing")
+                                    ifelse(bin_na_summary$n_na == bin_na_summary$n_samples, "structural_gap", "sample_specific_missing")
 )
 
 print(table(bin_na_summary$bin_status))
@@ -208,7 +214,22 @@ if (!file.exists(cosmic_tsv_path)) {
   write.csv(gene_annotation_result$gene_hits, file.path(output_dir, "Gene_bin_overlaps.csv"), row.names = FALSE)
 }
 
-bin_annotation <- bin_annotation[, c("bin_id", "chr", "bin_position", "bin_start", "bin_end", "n_cpg", "n_alu", "alu_methylation_pct", "cpg_methylation_pct", "gene_count", "gene_ids", "gene_names", "genes", "functional_annotation")]
+# 5d. Promoter annotation (promoter reference matched to bins by coordinate overlap)
+
+if (!file.exists(promoter_tsv_path)) {
+  warning("Promoter annotation source file not found (looked for ", promoter_tsv_path,
+          "); bin_annotation$promoter_count/promoter_names will be empty.")
+  bin_annotation$promoter_count <- 0L
+  bin_annotation$promoter_names <- NA_character_
+} else {
+  promoter_reference <- read_promoter_reference(promoter_tsv_path)
+  promoter_annotation_result <- annotate_bins_with_promoters(bin_annotation, promoter_reference)
+  bin_annotation <- promoter_annotation_result$bin_table
+  validate_promoter_bin_annotation(bin_annotation, promoter_reference, promoter_annotation_result$promoter_hits)
+  write.csv(promoter_annotation_result$promoter_hits, file.path(output_dir, "Promoter_bin_overlaps.csv"), row.names = FALSE)
+}
+
+bin_annotation <- bin_annotation[, c("bin_id", "chr", "bin_position", "bin_start", "bin_end", "n_cpg", "n_alu", "alu_methylation_pct", "cpg_methylation_pct", "gene_count", "gene_ids", "gene_names", "genes", "promoter_count", "promoter_names", "functional_annotation")]
 write.csv(bin_annotation, file.path(output_dir, "Bin_annotation_template.csv"), row.names = FALSE)
 
 # 6. Tumor/Normal pairing and paired differences
@@ -306,10 +327,10 @@ write.csv(prevalence_summary, file.path(output_dir, "Bin_prevalence_detection.cs
 # 8.1 Mean and SD computation
 mean_sd_summary <- aggregate(
   list(mean_methylation_tumor  = paired_diff$Tumor,
-    mean_methylation_normal = paired_diff$Normal,
-    sd_methylation_tumor = paired_diff$Tumor,
-    sd_methylation_normal = paired_diff$Normal,
-    tumor_normal_diff = paired_diff$diff
+       mean_methylation_normal = paired_diff$Normal,
+       sd_methylation_tumor = paired_diff$Tumor,
+       sd_methylation_normal = paired_diff$Normal,
+       tumor_normal_diff = paired_diff$diff
   ),
   by = list(chr = paired_diff$chr, bin_position = paired_diff$bin_position),
   FUN= function(x) c(mean = mean(x, na.rm = TRUE), sd = sd(x, na.rm = TRUE))
@@ -340,13 +361,14 @@ bin_table <- merge(bin_table, prevalence_summary, by = c("chr", "bin_position"),
 
 # 8.3 SD included in the final table
 bin_table <- bin_table[, c("bin_id", "chr", "bin_position", "bin_start", "bin_end", "bin_status",
-  "mean_methylation_tumor", "mean_methylation_normal", 
-  "sd_methylation_tumor", "sd_methylation_normal", "tumor_normal_diff",
-  "n_cpg", "n_alu", "alu_methylation_pct", "cpg_methylation_pct",
-  "gene_count", "gene_ids", "gene_names", "genes", "functional_annotation",
-  "n_present_Normal", "n_present_Tumor", "n_total_Normal", "n_total_Tumor",
-  "prevalence_tumor", "prevalence_normal",
-  "n_samples_total", "n_present_total", "prevalence_total")]
+                           "mean_methylation_tumor", "mean_methylation_normal", 
+                           "sd_methylation_tumor", "sd_methylation_normal", "tumor_normal_diff",
+                           "n_cpg", "n_alu", "alu_methylation_pct", "cpg_methylation_pct",
+                           "gene_count", "gene_ids", "gene_names", "genes",
+                           "promoter_count", "promoter_names", "functional_annotation",
+                           "n_present_Normal", "n_present_Tumor", "n_total_Normal", "n_total_Tumor",
+                           "prevalence_tumor", "prevalence_normal",
+                           "n_samples_total", "n_present_total", "prevalence_total")]
 
 write.csv(bin_table, file.path(output_dir, "Bin_table.csv"), row.names = FALSE)
 
