@@ -1,10 +1,10 @@
 # Exploration of Epigenomic Data in Colorectal Cancer
 
-##### Paula Artiz Dueñas (Bioinformatics - UPC)
+##### Paula Artiz Dueñas, UPC
 
 ### What This Project Is About
 
-This project is an interactive **R Shiny web app** for exploring and visualizing DNA methylation data in colorectal cancer. It lets users look at genomic "bins" (1 Mb chunks of the genome), compare methylation between tumor and normal samples, filter by region, and explore gene annotations, all through interactive plots and tables.
+This project is an interactive **R Shiny web app** for exploring and visualizing DNA methylation data in colorectal cancer. It lets users look at genomic "bins" (1 Mb chunks of the genome), compare methylation between tumor and normal samples, filter by region, and explore gene and promoter annotations, all through interactive plots and tables.
 
 ### What the App Can Do
 
@@ -22,7 +22,7 @@ The app has a sidebar for picking data, plus several tabs for exploring it.
 4. **Genome-wide Profile**: a Manhattan-style plot of tumor–normal methylation differences, flagging significant/outlier bins.
 5. **Feature × Chromosome Heatmap**:methylation shift per patient and chromosome, with an optional color strip for a clinical feature.
 6. **Clinical Explorer**: compare tumor methylation by mutation status (KRAS, BRAF, TP53) and browse/filter the clinical metadata table.
-7. **Bin Table**: a searchable, filterable table of all bins with their stats and annotations, downloadable as a CSV.
+7. **Bin Table**: a searchable, filterable table of all bins with their stats and annotations (including gene and promoter overlaps), downloadable as a CSV.
 
 ---
 
@@ -34,10 +34,11 @@ The app never touches the raw data directly, it just loads one pre-built file, `
 |---|---|---|
 | 1 | `Alus_and_CpGs.R` | Helper functions that read the raw per-CpG methylation tables and count CpGs/Alu elements per 1 Mb bin. You don't run this yourself, it gets `source()`-d automatically by `Week_2_With_Prevalence.R`. |
 | 2 | `Gene_Annotation.R` | Helper functions that match bin coordinates against the COSMIC Cancer Gene Census to add gene names/IDs. Also `source()`-d automatically, not run directly. |
-| 3 | `Week_2_With_Prevalence.R` | **This is the one you actually run.** It loads the metadata, reshapes the per-sample JSON files, sources the two scripts above, computes CpG/Alu counts and gene annotation, works out prevalence stats, builds the final bin table, and saves `data_app.rds`. |
-| 4 | `app.R` | The Shiny app itself. It just loads `data_app.rds` (from step 3), launch it with `shiny::runApp()`, it's not part of the "pipeline" as such. |
+| 3 | `Promoter_Annotation.R` | Helper functions that match bin coordinates against a promoter reference file to add promoter names/counts. Also `source()`-d automatically, not run directly. |
+| 4 | `Week_2_With_Prevalence.R` | **This is the one you actually run.** It loads the metadata, reshapes the per-sample JSON files, sources the three scripts above, computes CpG/Alu counts, gene annotation, and promoter annotation, works out prevalence stats, builds the final bin table, and saves `data_app.rds`. |
+| 5 | `app.R` | The Shiny app itself. It just loads `data_app.rds` (from step 4), launch it with `shiny::runApp()`, it's not part of the "pipeline" as such. |
 
-**You only run `Week_2_With_Prevalence.R`. As long as all three `.R` scripts are sitting in the same folder, it takes care of the rest.**
+**You only run `Week_2_With_Prevalence.R`. As long as all four `.R` scripts are sitting in the same folder, it takes care of the rest.**
 
 ---
 
@@ -62,6 +63,13 @@ None of the raw data is included in this repo, you need to gather the following 
    - Inside a subfolder called `Cosmic_CancerGeneCensus_Tsv_v101_GRCh37/`
    - Needs the columns `GENE_SYMBOL`, `COSMIC_GENE_ID`, `CHROMOSOME`, `GENOME_START`, `GENOME_STOP`.
 
+5. **Promoter reference file**: used for promoter annotation:
+   - File: `Promoter_reference_GRCh37.tsv`
+   - Sits directly inside the `Archivo` folder (same folder as the COSMIC subfolder above).
+   - Needs the columns `promoter_name`, `chr`, `start`, `end` (GRCh37 coordinates).
+   - Not included in this repo, you need to build/export it yourself, e.g. from the UCSC Table Browser (`refGene` track, TSS ± N bp) or the Ensembl Regulatory Build filtered to `feature_type == "Promoter"`.
+   - If this file is missing, the pipeline still runs, it just fills `promoter_count`/`promoter_names` as empty and the app shows a warning banner on the Bin Table tab.
+
 #### Suggested folder layout
 
 Any layout works as long as you update the path variables to match (see below), but here's a layout that mirrors the original project:
@@ -71,6 +79,7 @@ Project/
 ├── R Scripts/
 │   ├── Alus_and_CpGs.R
 │   ├── Gene_Annotation.R
+│   ├── Promoter_Annotation.R
 │   ├── Week_2_With_Prevalence.R
 │   └── app.R
 └── Dataset/
@@ -85,6 +94,7 @@ Project/
     └── Archivo/
         ├── Cosmic_CancerGeneCensus_Tsv_v101_GRCh37/
         │   └── Cosmic_CancerGeneCensus_v101_GRCh37.tsv
+        ├── Promoter_reference_GRCh37.tsv
         └── CRC_curated_genes.txt   # optional
 ```
 
@@ -99,7 +109,7 @@ The scripts as provided still have **hardcoded paths from the original author's 
 #### In `Week_2_With_Prevalence.R`
 
 - **Line 7**: `setwd("/Users/paulaartizduenas/Desktop/Project/R Scripts")`
-  → Change this to wherever `Alus_and_CpGs.R`, `Gene_Annotation.R`, and `Week_2_With_Prevalence.R` live on your machine (they all need to be in the same folder, since lines 9 and 11 `source()` them by relative path).
+  → Change this to wherever `Alus_and_CpGs.R`, `Gene_Annotation.R`, `Promoter_Annotation.R`, and `Week_2_With_Prevalence.R` live on your machine (they all need to be in the same folder, since the `source()` calls near the top find them by relative path).
 
 - **Lines 15–18**: the four dataset root paths (Update **all four** to point to your local copies of the data described above).
   ```r
@@ -114,9 +124,14 @@ The scripts as provided still have **hardcoded paths from the original author's 
   cosmic_tsv_path <-find_first_existing(c("/Users/paulaartizduenas/Desktop/Project/Dataset/Archivo/Cosmic_CancerGeneCensus_Tsv_v101_GRCh37/Cosmic_CancerGeneCensus_v101_GRCh37.tsv"))
 
   ```
-#### In `Alus_and_CpGs.R` and `Gene_Annotation.R`
 
-- No hardcoded paths here, every function takes a `filepath`/`cosmic_tsv_path` argument as input. Just keep them in the same folder as `Week_2_With_Prevalence.R` so the `source()` calls above can find them.
+- **`promoter_tsv_path`**: by default this points at `Promoter_reference_GRCh37.tsv` inside `dataset_gene_annotation` (i.e. your `Archivo` folder), so it updates automatically once you fix line 15–18 above. Only change it separately if you name/place the file differently.
+  ```r
+  promoter_tsv_path <- file.path(dataset_gene_annotation, "Promoter_reference_GRCh37.tsv")
+  ```
+#### In `Alus_and_CpGs.R`, `Gene_Annotation.R`, and `Promoter_Annotation.R`
+
+- No hardcoded paths here, every function takes a `filepath`/`cosmic_tsv_path`/`promoter_tsv_path` argument as input. Just keep them in the same folder as `Week_2_With_Prevalence.R` so the `source()` calls above can find them.
 
 #### In `app.R`
 
@@ -132,6 +147,7 @@ The scripts as provided still have **hardcoded paths from the original author's 
 **Already in this repo:**
 - `Alus_and_CpGs.R`: CpG/Alu counting helpers (sourced automatically).
 - `Gene_Annotation.R`: gene annotation helpers (sourced automatically).
+- `Promoter_Annotation.R`: promoter annotation helpers (sourced automatically).
 - `Week_2_With_Prevalence.R`: the pipeline driver, produces `data_app.rds`.
 - `app.R`: the Shiny app.
 
@@ -140,11 +156,12 @@ The scripts as provided still have **hardcoded paths from the original author's 
 - `counts_bins_norm_mean/` (per-sample JSON bin files)
 - Raw per-CpG methylation files/archives (for CpG/Alu counting)
 - `Cosmic_CancerGeneCensus_v101_GRCh37.tsv` (download from COSMIC)
+- `Promoter_reference_GRCh37.tsv` (build/export from UCSC or Ensembl, see above)
 - `CRC_curated_genes.txt` (optional, not currently used)
 
 **Generated automatically once you run the pipeline:**
 - `data_app.rds`: the file the app actually reads.
-- Several intermediate CSVs along the way: `Metadata_clean.csv`, `Methylation_long.csv`, `CpG_Alu_bin_annotation.csv`, `Gene_bin_overlaps.csv`, `Bin_annotation_template.csv`, `Bin_prevalence_detection.csv`, `Bin_table.csv`.
+- Several intermediate CSVs along the way: `Metadata_clean.csv`, `Methylation_long.csv`, `CpG_Alu_bin_annotation.csv`, `Gene_bin_overlaps.csv`, `Promoter_bin_overlaps.csv`, `Bin_annotation_template.csv`, `Bin_prevalence_detection.csv`, `Bin_table.csv`.
 
 **R packages you'll need:**
 - Pipeline (`Week_2_With_Prevalence.R` + the scripts it sources): `jsonlite`, `data.table`.
@@ -155,7 +172,7 @@ The scripts as provided still have **hardcoded paths from the original author's 
 ### Steps to Run Everything
 
 1. Install the R packages listed above.
-2. Put `Alus_and_CpGs.R`, `Gene_Annotation.R`, and `Week_2_With_Prevalence.R` in the same folder.
+2. Put `Alus_and_CpGs.R`, `Gene_Annotation.R`, `Promoter_Annotation.R`, and `Week_2_With_Prevalence.R` in the same folder.
 3. Edit the paths in `Week_2_With_Prevalence.R` (line 7, and lines 15–18) so they point to your script folder and dataset folders.
 4. Run the pipeline:
    ```r
