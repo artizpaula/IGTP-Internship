@@ -215,8 +215,7 @@ patient_annotation <- unique(metadata[metadata$Type == "Tumor", c("patient_id", 
 patient_annotation$patient_id <- as.character(patient_annotation$patient_id)
 patient_bin_shift$patient_id <- as.character(patient_bin_shift$patient_id)
 
-# one row per SAMPLE (Tumor and Normal kept separate) for the patient similarity network, so it can show whether the
-# samples that resemble each other are Tumor or Normal, the same way Type is broken out in the metadata table
+# one row per SAMPLE (Tumor and Normal kept separate) for the patient similarity network
 sample_annotation <- unique(metadata[, c("sample_id", "patient_id", "Type", "Recaiguda", "BRAF", "KRAS", "TP53", "MSS", "sexe", "estadi2")])
 sample_annotation$patient_id <- as.character(sample_annotation$patient_id)
 
@@ -344,8 +343,7 @@ clinical_categorical_choices <- function(col_vals) {
   sort(unique(vals))
 }
 
-# one checkbox group per categorical clinical column, all options selected by default.
-# compact = TRUE renders a small inline control (for the strip above the metadata table) instead of a full-width block
+# one checkbox group per categorical clinical column, all options selected by default
 build_clinical_categorical_filter_inputs <- function(cols, df, compact = FALSE) {
   lapply(cols, function(col) {
     choices <- clinical_categorical_choices(df[[col]])
@@ -361,7 +359,6 @@ build_clinical_categorical_filter_inputs <- function(cols, df, compact = FALSE) 
 }
 
 # one range slider per numeric clinical column (age, CNV counts, survival times, methylation summaries, etc.)
-# compact = TRUE renders a narrower slider for the strip above the metadata table
 build_clinical_numeric_filter_inputs <- function(cols, df, compact = FALSE) {
   lapply(cols, function(col) {
     vals <- df[[col]]
@@ -379,8 +376,7 @@ build_clinical_numeric_filter_inputs <- function(cols, df, compact = FALSE) {
   })
 }
 
-# applies every active Clinical Explorer filter to a clinical_profile_table subset; missing values are kept
-# (not silently dropped) so patients with unrecorded data for one field aren't lost from the others
+# applies every active Clinical Explorer filter to a clinical_profile_table subset
 apply_clinical_filters <- function(df, numeric_cols, categorical_cols, input) {
   for (col in categorical_cols) {
     sel <- input[[paste0("clinfilter_", col)]]
@@ -407,15 +403,12 @@ build_shift_matrix <- function(df, bin_ids) {
 }
 
 # generic long-to-wide reshape (id, key, value) -> matrix, used for both PCA/UMAP and the network plot
+# (uses tapply instead of stats::reshape(); reshape() scales very poorly once key_col has
+# thousands of distinct values, e.g. all 3110 bins selected at once -- ~25s vs ~0.6s here)
 build_wide_matrix <- function(df, id_col, key_col, value_col) {
   df <- df[is.finite(df[[value_col]]), c(id_col, key_col, value_col)]
   if (nrow(df) == 0) return(NULL)
-  wide <- reshape(df, idvar = id_col, timevar = key_col, direction = "wide")
-  row_ids <- as.character(wide[[id_col]])
-  wide[[id_col]] <- NULL
-  names(wide) <- sub(paste0("^", value_col, "\\."), "", names(wide))
-  mat <- as.matrix(wide)
-  rownames(mat) <- row_ids
+  mat <- tapply(df[[value_col]], list(df[[id_col]], as.character(df[[key_col]])), FUN = identity)
   mat <- mat[, colSums(!is.finite(mat)) == 0, drop = FALSE]
   mat <- mat[rowSums(!is.finite(mat)) == 0, , drop = FALSE]
   if (nrow(mat) == 0 || ncol(mat) == 0) return(NULL)
@@ -447,10 +440,7 @@ theme_app <- function(base_size = 12) {
     )
 }
 
-# Converts an hclust object into a data.frame of line segments (x, y, xend, yend) that can be
-# drawn with geom_segment() to build a rectangular dendrogram in ggplot2. Leaves are placed at
-# x = 1..n in their clustered order (hc$order); segment y-values are the cluster merge heights
-# (0 for leaves), so cutting the plot at a given y shows which items were joined at that height.
+# Converts an hclust object into a data.frame of line segments
 hclust_to_segments <- function(hc) {
   n <- length(hc$order)
   leaf_pos <- integer(n)
@@ -478,10 +468,7 @@ hclust_to_segments <- function(hc) {
   do.call(rbind, segments)
 }
 
-# builds a minimal ggplot dendrogram from a segment table produced by hclust_to_segments().
-# orientation = "top" draws it right-side-up above the heatmap (leaves at the bottom, touching
-# the heatmap); orientation = "left" draws it on its side to the left of the heatmap (leaves on
-# the right, touching the heatmap), so both dendrograms "grow" outward from the data they order.
+# builds a minimal ggplot dendrogram from a segment table produced by hclust_to_segments()
 plot_dendrogram <- function(segments, orientation = c("top", "left")) {
   orientation <- match.arg(orientation)
   p <- ggplot(segments) + theme_void() + theme(plot.margin = margin(1, 1, 1, 1))
@@ -759,37 +746,305 @@ plot_desc <- function(...) {
   tags$div(style = "font-size:12px; color:#5c7182; margin-top:8px; padding-top:8px; border-top:1px solid #e3e8ec; line-height:1.45;", ...)
 }
 
+# Export helpers (PNG + CSV for every plot)
+
+# small style shared by every export button so they all look the same
+export_btn_style <- "font-size:11.5px; padding:4px 12px; border-radius:6px;"
+
+# Row of export buttons placed under a ggplot/base-R plot (plotOutput)
+plot_export_ui <- function(id) {
+  div(style = "display:flex; gap:8px; margin-top:8px;",
+      downloadButton(paste0(id, "_dl_png"), "Export plot (.png)", icon = icon("image"),
+                     class = "btn-sm btn-outline-secondary", style = export_btn_style),
+      downloadButton(paste0(id, "_dl_csv"), "Export data (.csv)", icon = icon("table"),
+                     class = "btn-sm btn-outline-secondary", style = export_btn_style))
+}
+
+# Row of export buttons placed under a plotly plot (plotlyOutput)
+plotly_export_ui <- function(id) {
+  div(style = "display:flex; gap:8px; margin-top:8px;",
+      tags$button(type = "button", class = "btn btn-sm btn-outline-secondary", style = export_btn_style,
+                  onclick = sprintf("Plotly.downloadImage(document.getElementById('%s'), {format:'png', filename:'%s'});", id, id),
+                  icon("image"), " Export plot (.png)"),
+      downloadButton(paste0(id, "_dl_csv"), "Export data (.csv)", icon = icon("table"),
+                     class = "btn-sm btn-outline-secondary", style = export_btn_style))
+}
+
+# Registers the two downloadHandlers behind plot_export_ui() for a ggplot-based plot
+register_plot_export <- function(output, id, plot_fn, data_fn, width = 9, height = 6.5, dpi = 150) {
+  output[[paste0(id, "_dl_png")]] <- downloadHandler(
+    filename = function() paste0(id, ".png"),
+    content = function(file) {
+      ggsave(file, plot = plot_fn(), width = width, height = height, dpi = dpi, bg = "white")
+    })
+  output[[paste0(id, "_dl_csv")]] <- downloadHandler(
+    filename = function() paste0(id, ".csv"),
+    content = function(file) {
+      write.csv(data_fn(), file, row.names = FALSE)
+    })
+}
+
+# Registers just the CSV downloadHandler behind plotly_export_ui() (PNG is handled client-side).
+register_plotly_export <- function(output, id, data_fn) {
+  output[[paste0(id, "_dl_csv")]] <- downloadHandler(
+    filename = function() paste0(id, ".csv"),
+    content = function(file) {
+      write.csv(data_fn(), file, row.names = FALSE)
+    })
+}
+
+# Small bundle of responsive CSS rules for the Genome Browser toolbar + plots
+gb_responsive_css <- "
+.gb-toolbar { display:flex; flex-wrap:wrap; gap:14px; align-items:center; width:100%; }
+.gb-toolbar-group { display:flex; gap:6px; align-items:center; }
+.gb-search-group { flex:1 1 320px; min-width:220px; }
+.gb-nav-group, .gb-zoom-group { flex:0 0 auto; }
+.gb-plot-wrap { width:100%; }
+.gb-plot-wrap .html-widget.plotly { width:100% !important; }
+@media (max-width: 767.98px) {
+  .gb-toolbar { gap:10px; }
+  .gb-toolbar-group { width:100%; }
+  .gb-nav-group, .gb-zoom-group { justify-content:center; }
+  .gb-search-group { min-width:0; }
+}
+@media (max-width: 991.98px) {
+  .gb-zoom-group actionButton, .gb-zoom-group .btn { flex: 1 1 auto; }
+}
+
+/* App-wide responsive rules: plots/tables/cards adapt to viewport instead of staying at a fixed desktop size */
+.shiny-plot-output, .html-widget, .html-widget.plotly { max-width: 100%; }
+.card-body { min-width: 0; } /* lets flex/grid children shrink instead of forcing horizontal scroll on the whole card */
+.dataTables_wrapper { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+@media (max-width: 767.98px) {
+  .card-header { font-size: 13.5px; padding: 10px 12px; }
+  .card-body { padding: 12px; }
+  .dataTables_wrapper .dataTables_filter input,
+  .dataTables_wrapper .dataTables_length select { font-size: 12px; }
+  table.dataTable { font-size: 12px; }
+  .bslib-value-box .value-box-value { font-size: 20px; }
+}
+@media (max-width: 575.98px) {
+  table.dataTable { font-size: 11px; }
+}
+"
+
+# CSS for the Home / Overview landing page
+home_css <- "
+.home-page { padding: 4px 2px 6px 2px; }
+.home-hero {
+  position: relative; width: calc(100% + 3rem); margin: -1.5rem -1.5rem 30px -1.5rem;
+  padding: 44px 48px 38px 48px; overflow: hidden; color: #eaf2f6;
+  display: flex; flex-wrap: wrap; gap: 36px; align-items: center; justify-content: space-between;
+  background: radial-gradient(1100px 460px at 12% -15%, rgba(58,169,201,0.30), transparent 60%),
+              linear-gradient(135deg, #0b2436 0%, #16324f 55%, #0e5a63 130%);
+  min-height: 300px;
+}
+.home-hero::after { content:''; position:absolute; right:-70px; top:-90px; width:300px; height:300px;
+  border-radius:50%; background:rgba(58,169,201,0.16); }
+.home-eyebrow { font-size:12px; font-weight:700; letter-spacing:1.6px; color:#7fd8cf; text-transform:uppercase; margin-bottom:14px; }
+.home-hero-text { max-width:600px; position:relative; z-index:1; }
+.home-hero-text h1 { font-size:clamp(24px,2.6vw,36px); font-weight:700; line-height:1.18; margin-bottom:14px; color:#ffffff; }
+.home-hero-lede { font-size:14.5px; line-height:1.65; color:#c7d8e3; margin-bottom:22px; }
+.home-hero-actions { display:flex; gap:12px; flex-wrap:wrap; }
+.home-cta-btn { border:none; border-radius:8px; padding:10px 20px; font-weight:600; font-size:13.5px; cursor:pointer;
+  transition:transform .15s ease, box-shadow .15s ease; display:inline-flex; align-items:center; gap:8px; }
+.home-cta-primary { background:#0e7c86; color:#fff; box-shadow:0 6px 18px rgba(14,124,134,0.45); }
+.home-cta-primary:hover { transform:translateY(-2px); box-shadow:0 10px 22px rgba(14,124,134,0.55); }
+.home-cta-ghost { background:rgba(255,255,255,0.06); color:#eaf2f6; border:1px solid rgba(255,255,255,0.35); }
+.home-cta-ghost:hover { background:rgba(255,255,255,0.14); transform:translateY(-2px); }
+.home-hero-stats { display:grid; grid-template-columns:repeat(2,minmax(128px,1fr)); gap:12px; position:relative; z-index:1; }
+.home-stat-card { background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.16); border-radius:12px; padding:14px 18px; min-width:136px; }
+.home-stat-value { font-size:25px; font-weight:700; color:#ffffff; line-height:1; }
+.home-stat-label { font-size:11px; color:#a9c1d1; text-transform:uppercase; letter-spacing:0.5px; margin-top:6px; }
+.home-section { margin-bottom:30px; }
+.home-section-title { font-size:19px; font-weight:700; color:#16324f; margin-bottom:6px; display:flex; align-items:center; gap:10px; }
+.home-section-lede { font-size:13px; color:#6c8093; margin-bottom:16px; max-width:840px; line-height:1.55; }
+.home-grid-2 { display:grid; grid-template-columns:1.05fr 1fr; gap:20px; }
+.home-card { background:#ffffff; border:1px solid #e3e8ec; border-radius:14px; padding:22px 24px; box-shadow:0 2px 10px rgba(15,40,60,0.04); }
+.home-card h3 { font-size:15px; font-weight:700; color:#16324f; display:flex; align-items:center; gap:9px; margin-bottom:12px; }
+.home-card p { font-size:13px; color:#3a5470; line-height:1.65; margin-bottom:10px; }
+.home-card p:last-child { margin-bottom:0; }
+.home-source-list { list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:13px; }
+.home-source-item { display:flex; gap:12px; align-items:flex-start; }
+.home-source-icon { flex:0 0 auto; width:32px; height:32px; border-radius:9px; background:#eaf6f4; color:#0e7c86;
+  display:flex; align-items:center; justify-content:center; font-size:15px; }
+.home-source-text b { display:block; font-size:12.5px; color:#16324f; margin-bottom:2px; }
+.home-source-text span { font-size:12px; color:#6c8093; line-height:1.5; }
+.home-func-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(225px,1fr)); gap:14px; }
+.home-func-card { background:#ffffff; border:1px solid #e3e8ec; border-radius:14px; padding:17px 19px; cursor:pointer;
+  transition:all .15s ease; text-align:left; display:block; width:100%; }
+.home-func-card:hover { border-color:#0e7c86; box-shadow:0 8px 20px rgba(14,124,134,0.14); transform:translateY(-3px); }
+.home-func-icon { width:36px; height:36px; border-radius:10px; background:linear-gradient(135deg,#0e7c86,#3aa9c9); color:#fff;
+  display:flex; align-items:center; justify-content:center; font-size:16px; margin-bottom:11px; }
+.home-func-card h4 { font-size:13.5px; font-weight:700; color:#16324f; margin-bottom:5px; }
+.home-func-card p { font-size:12px; color:#6c8093; line-height:1.55; margin-bottom:0; }
+.home-func-arrow { font-size:11.5px; color:#0e7c86; font-weight:600; margin-top:9px; display:inline-flex; align-items:center; gap:4px; }
+.home-flow { display:flex; align-items:stretch; gap:0; flex-wrap:wrap; }
+.home-flow-stage { flex:1 1 200px; background:#ffffff; border:1px solid #e3e8ec; border-radius:14px; padding:19px 18px; min-width:200px; }
+.home-flow-stage.home-flow-data { border-top:4px solid #3aa9c9; }
+.home-flow-stage.home-flow-process { border-top:4px solid #0e7c86; }
+.home-flow-stage.home-flow-modules { border-top:4px solid #16324f; }
+.home-flow-stage.home-flow-insight { border-top:4px solid #2fae66; }
+.home-flow-stage h5 { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:#7d92a3; margin-bottom:10px; }
+.home-flow-stage ul { padding-left:17px; margin-bottom:0; font-size:12px; color:#3a5470; line-height:1.65; }
+.home-flow-connector { flex:0 0 44px; display:flex; align-items:center; justify-content:center; color:#0e7c86; font-size:19px; }
+.home-footer { width:calc(100% + 3rem); margin:6px -1.5rem -1.5rem -1.5rem; padding:14px 48px; background:#f7f9fa;
+  border-top:1px solid #e7ecef; font-size:11px; color:#8092a3; text-align:center; }
+@media (max-width: 991.98px) {
+  .home-hero { flex-direction:column; align-items:flex-start; }
+  .home-hero-stats { width:100%; grid-template-columns:repeat(2,1fr); }
+  .home-grid-2 { grid-template-columns:1fr; }
+  .home-flow { flex-direction:column; }
+  .home-flow-connector { transform:rotate(90deg); padding:6px 0; }
+}
+"
+
+# Home page helper builders (small functions so the markup below stays readable)
+
+# One stat chip in the hero (e.g. "128 Patients"). `value_ui` can be a plain number/string
+home_stat <- function(value_ui, label) {
+  div(class = "home-stat-card",
+      div(class = "home-stat-value", value_ui),
+      div(class = "home-stat-label", label))
+}
+
+# One row in the "Data Sources" card.
+home_source_item <- function(title, desc) {
+  div(class = "home-source-item",
+      div(class = "home-source-text", tags$b(title), tags$span(desc)))
+}
+
+# One clickable card in the "Key Functionalities" grid
+home_func_card <- function(title, desc, nav_target) {
+  tags$button(type = "button", class = "home-func-card",
+              onclick = sprintf("Shiny.setInputValue('home_nav_target', '%s', {priority:'event'});", nav_target),
+              h4(title), p(desc),
+              div(class = "home-func-arrow", "Open tab \u2192"))
+}
+
 # UI Definition
 
 ui <- page_sidebar(title = div(style = "display:flex; justify-content:space-between; align-items:center; width:100%; padding:18px 10px; border-bottom:1px solid rgba(255,255,255,0.10);",
                                
                                # Left side
                                div(h2("Exploration of Epigenomic Data in Colorectal Cancer",style = "margin:0; font-weight:600; font-size:28px; line-height:1.2;"),
-                                   tags$div("Institut Germans Trias i Pujol (IGTP) · Universitat Politècnica de Catalunya (UPC)", style = "font-size:13px; color:#9fb3c8; margin-top:4px;")),
-                               
-                               # Right side
-                               div(style = "display:flex; gap:14px; align-items:center; margin-left:auto;",
-                                   div(style = "display:flex; align-items:center; gap:8px; border:1px solid #3a5470; border-radius:8px; padding:8px 14px;", bs_icon("person", size = "2em"), textOutput("n_patients", inline = TRUE)," patients"),
-                                   div(style = "display:flex; align-items:center; gap:8px; border:1px solid #3a5470; border-radius:8px; padding:8px 14px;", bs_icon("clipboard-data", size = "2em"), textOutput("n_samples", inline = TRUE)," samples"))),
+                                   tags$div("Institut Germans Trias i Pujol (IGTP) · Universitat Politècnica de Catalunya (UPC)", style = "font-size:13px; color:#9fb3c8; margin-top:4px;"))),
                    
-                   theme = bs_theme(version = 5, base_font = font_google("IBM Plex Sans"), heading_font = font_google("Libre Franklin"),
-                                    bg = "#f4f7f9", fg = "#0b2436", primary = "#0e7c86", secondary = "#16324f",success  = "#2fae66", info = "#3aa9c9", warning = "#e0a339", danger = "#d1495b", "navbar-bg"  = "#0b2436", base_font_size_scale = 0.98),
+                   theme = bslib::bs_add_rules(bs_theme(version = 5, base_font = font_google("IBM Plex Sans"), heading_font = font_google("Libre Franklin"),
+                                                        bg = "#f4f7f9", fg = "#0b2436", primary = "#0e7c86", secondary = "#16324f",success  = "#2fae66", info = "#3aa9c9", warning = "#e0a339", danger = "#d1495b", "navbar-bg"  = "#0b2436", base_font_size_scale = 0.98), c(gb_responsive_css, home_css)),
                    
-                   sidebar = sidebar(width = 300, tags$div("DATA SELECTION", style = "font-size:14px; font-weight:700; letter-spacing:0.8px; color:#7d92a3; margin-bottom:0px;"),
-                                     selectInput("chr", "Chromosome:", choices = chrom_list), selectizeInput("bins", "Selected bins:", choices = NULL, multiple = TRUE, options = list(placeholder = "Find and select bins (ex: 1_1000000)...", plugins = list("remove_button"))),
-                                     actionButton("add_chr_bins", "Add all bins on the chromosome", icon = bs_icon("plus-circle"), class = "btn-sm class=btn-outline-light w-100"),
-                                     actionButton("clear_bins", "Clear bin selection", icon = bs_icon("x-circle"), class = "btn-sm class=btn-outline-light w-100"),
-                                     fileInput("bins_file", "Or upload bins to select:", accept = c(".csv", ".tsv", ".txt", "text/csv", "text/tab-separated-values", "text/plain"), placeholder = "No file selected", buttonLabel = "Browse..."),
-                                     tags$div("Accepts .csv/.tsv/.txt or a plain list of bin IDs like 1_1000000, one per line or comma-separated).", style = "font-size:11px; color:#7d92a3; margin-top:-10px; margin-bottom:8px;"),
-                                     hr(style = "margin:1px 0; border-color:#3a5470;")),
+                   sidebar = sidebar(width = 300,
+                                     # Landing message shown only on the Home tab, in place of the data filters
+                                     # (which don't apply until the person has picked an exploration tab).
+                                     conditionalPanel("input.main_nav == 'Home'",
+                                                      div(style = "text-align:center; padding:14px 4px;",
+                                                          tags$p(style = "font-size:13px; color:#0b2436; margin-top:12px; line-height:1.6;",
+                                                                 "Pick a tab above to start exploring the chromosome, bin, and view-level controls will appear here."))),
+                                     conditionalPanel("input.main_nav != 'Home'",
+                                                      tags$div("DATA SELECTION", style = "font-size:14px; font-weight:700; letter-spacing:0.8px; color:#7d92a3; margin-bottom:0px;"),
+                                                      selectInput("chr", "Chromosome:", choices = chrom_list), selectizeInput("bins", "Selected bins:", choices = NULL, multiple = TRUE, options = list(placeholder = "Find and select bins (ex: 1_1000000)...", plugins = list("remove_button"))),
+                                                      actionButton("add_chr_bins", "Add all bins on the chromosome", icon = bs_icon("plus-circle"), class = "btn-sm class=btn-outline-light w-100"),
+                                                      actionButton("clear_bins", "Clear bin selection", icon = bs_icon("x-circle"), class = "btn-sm class=btn-outline-light w-100"),
+                                                      fileInput("bins_file", "Or upload bins to select:", accept = c(".csv", ".tsv", ".txt", "text/csv", "text/tab-separated-values", "text/plain"), placeholder = "No file selected", buttonLabel = "Browse..."),
+                                                      tags$div("Accepts .csv/.tsv/.txt or a plain list of bin IDs like 1_1000000, one per line or comma-separated).", style = "font-size:11px; color:#7d92a3; margin-top:-10px; margin-bottom:8px;"),
+                                                      hr(style = "margin:1px 0; border-color:#3a5470;"),
+                                                      tags$div("VISUALIZATION LEVEL", style = "font-size:14px; font-weight:700; letter-spacing:0.8px; color:#7d92a3; margin-bottom:0px;"),
+                                                      radioButtons("view_level", NULL,
+                                                                   choices = c("By Bin (aggregated)" = "bins", "By Sample (raw)" = "samples"),
+                                                                   selected = "bins", inline = TRUE),
+                                                      tags$div("Applies to plots where both views make sense: switches between pre-aggregated per-bin means and unaggregated per-sample methylation values.",
+                                                               style = "font-size:11px; color:#7d92a3; margin-top:-10px; margin-bottom:8px;"),
+                                                      hr(style = "margin:1px 0; border-color:#3a5470;"))),
                    
-                   navset_card_underline(title = "Exploration and Visualization",
+                   navset_card_underline(title = "Exploration and Visualization", id = "main_nav",
+                                         # 0. Home
+                                         nav_panel(title = "Home", value = "Home",
+                                                   div(class = "home-page",
+                                                       
+                                                       # Hero
+                                                       div(class = "home-hero",
+                                                           div(class = "home-hero-text",
+                                                               tags$div(class = "home-eyebrow", "Research Platform \u00b7 IGTP & UPC"),
+                                                               tags$h1("Mapping the Epigenomic Landscape of Colorectal Cancer"),
+                                                               tags$p(class = "home-hero-lede",
+                                                                      "An interactive platform for exploring genome-wide DNA methylation differences between tumor and matched normal colorectal tissue, and for relating those differences to each patient's mutation status and clinical profile."),
+                                                               div(class = "home-hero-actions",
+                                                                   tags$button(type = "button", class = "home-cta-btn home-cta-primary",
+                                                                               onclick = "Shiny.setInputValue('home_nav_target', 'Genome Browser', {priority:'event'});",
+                                                                               "Launch Genome Browser"),
+                                                                   tags$button(type = "button", class = "home-cta-btn home-cta-ghost",
+                                                                               onclick = "Shiny.setInputValue('home_nav_target', 'Overview', {priority:'event'});",
+                                                                               "See Data Overview"))),
+                                                           div(class = "home-hero-stats",
+                                                               home_stat(textOutput("n_patients", inline = TRUE), "Patients"),
+                                                               home_stat(textOutput("n_samples", inline = TRUE), "Samples (Tumor + Normal)"),
+                                                               home_stat(format(nrow(bin_table), big.mark = ","), "Genomic Bins (1 Mb)"),
+                                                               home_stat(length(chrom_list), "Chromosomes Covered"))),
+                                                       
+                                                       # Objective + Data sources ----
+                                                       div(class = "home-section home-grid-2",
+                                                           div(class = "home-card",
+                                                               h3("Project Objective"),
+                                                               p("This platform was built to make genome-wide DNA methylation differences between colorectal tumor and matched normal tissue easy to explore, without writing code. The genome is split into 1\u00a0Mb bins, and methylation is compared bin-by-bin between tumor and normal samples across every chromosome."),
+                                                               p("Beyond the tumor/normal contrast, the platform lets you relate methylation shifts to each patient's clinical and mutation profile, sex, stage, MSI/MSS status, and BRAF/KRAS/TP53 mutation status \u2014 and to overlay genomic context such as CpG islands, Alu repeats, and COSMIC cancer-gene annotation, in order to help surface candidate regions for further study.")),
+                                                           div(class = "home-card",
+                                                               h3("Data Sources"),
+                                                               tags$ul(class = "home-source-list",
+                                                                       home_source_item("Clinical & Mutation Metadata",
+                                                                                        "One record per sample: patient ID, sample type (Tumor/Normal), sex, age, tumor stage, MSI/MSS status, relapse, and BRAF/KRAS/TP53 mutation status."),
+                                                                       home_source_item("Genomic Bin Table",
+                                                                                        "The genome split into 1\u00a0Mb bins, each with mean/SD methylation (Tumor and Normal), CpG and Alu content, and COSMIC Cancer Gene Census + promoter annotation."),
+                                                                       home_source_item("Per-sample Methylation Values",
+                                                                                        "Raw, unaggregated methylation measurements per sample and bin, used for sample-level views such as density plots, PCA/UMAP, and the similarity network.")))),
+                                                       
+                                                       # Key functionalities
+                                                       div(class = "home-section",
+                                                           div(class = "home-section-title", "Key Functionalities"),
+                                                           p(class = "home-section-lede", "Every card below opens the matching tab to start exploring."),
+                                                           div(class = "home-func-grid",
+                                                               home_func_card("Genome Browser", "Zoom into any chromosome, search by coordinate, bin ID, or gene, and compare Tumor vs Normal methylation base-pair by base-pair.", "Genome Browser"),
+                                                               home_func_card("Genome-wide Profile", "A Manhattan-style view across all chromosomes flags statistically significant and outlier bins in one glance.", "Genome-wide Profile"),
+                                                               home_func_card("Feature \u00d7 Chromosome Heatmap", "Cluster patients and bins by methylation shift, and overlay a clinical feature as a colour strip.", "Feature \u00d7 Chromosome Heatmap"),
+                                                               home_func_card("Overview", "A summary dashboard of the Tumor vs Normal shift, split by mutation status, stage/MSI, and sex.", "Overview"),
+                                                               home_func_card("Clinical Explorer", "Cross-reference methylation with each patient's full clinical and mutation profile, filterable by subgroup.", "Clinical Explorer"),
+                                                               home_func_card("Bin Table", "The full annotated bin-level table \u2014 methylation stats, CpG/Alu content, COSMIC genes and promoters \u2014 exportable to CSV.", "Bin Table"),
+                                                               home_func_card("Tumor vs. Normal", "Density plots, PCA/UMAP projections, and a patient similarity network reveal global Tumor/Normal separation.", "Tumor vs. Normal"))),
+                                                       
+                                                       div(class = "home-footer",
+                                                           "Exploration of Epigenomic Data in Colorectal Cancer \u00b7 Institut Germans Trias i Pujol (IGTP) & Universitat Polit\u00e8cnica de Catalunya (UPC) \u00b7 Built with R Shiny, bslib, plotly, ggplot2 and patchwork."))),
+                                         
                                          # 1. Genome Browser
-                                         nav_panel("Genome Browser", div(style = "font-size:13px; color:#6c757d; margin-bottom:10px;", "Browse methylation across the whole genome: pick a chromosome, zoom in/out, or search by coordinates, bin ID, or gene name."), card(card_header("All chromosomes, click a point to jump to that chromosome"), plotlyOutput("genome_overview_plot", height = "calc(max(300px, min(42vh, 420px)))")), card(card_header(textOutput("browser_position_header", inline = TRUE)), div(style = "display:flex; flex-wrap:wrap; gap:14px; align-items:center; margin-bottom:4px;", div(style = "display:flex; gap:6px; align-items:center; flex:1 1 320px; min-width:260px;", textInput("browser_search", label = NULL, placeholder = "e.g. 12:25000000-26000000, 12_25000000, or KRAS", width = "100%"), actionButton("browser_search_go", NULL, icon = bs_icon("search"), class = "btn-sm btn-outline-secondary")), div(style = "display:flex; gap:4px; align-items:center; flex:0 0 auto;", actionButton("prev_chr", NULL, icon = bs_icon("chevron-left"), class = "btn-sm btn-outline-secondary"), selectInput("browser_chr", NULL, choices = chrom_list, selected = "1", width = "90px"), actionButton("next_chr", NULL, icon = bs_icon("chevron-right"), class = "btn-sm btn-outline-secondary")), div(style = "display:flex; gap:4px; flex:0 0 auto;", actionButton("zoom_in", NULL, icon = bs_icon("zoom-in"), class = "btn-sm btn-outline-secondary"), actionButton("zoom_out", NULL, icon = bs_icon("zoom-out"), class = "btn-sm btn-outline-secondary"), actionButton("zoom_reset", "Whole chromosome", icon = bs_icon("arrow-counterclockwise"), class = "btn-sm btn-outline-secondary"))), plotlyOutput("browser_chr_plot", height = "calc(max(360px, min(58vh, 560px)))"), plot_desc("Tumor vs Normal methylation line-by-line across one chromosome."), tags$div("Tip: bins currently in your sidebar selection are outlined on the plot above. You can also drag directly on the plot to zoom, and double-click it to reset.", style = "font-size:11px; color:#7d92a3; margin-top:6px;")), card(card_header("External Resources for This Region"), uiOutput("browser_external_links"))),
+                                         nav_panel("Genome Browser",
+                                                   div(style = "font-size:13px; color:#6c757d; margin-bottom:10px;",
+                                                       "Browse methylation across the whole genome: pick a chromosome, zoom in/out, or search by coordinates, bin ID, or gene name."),
+                                                   card(full_screen = TRUE,
+                                                        card_header("All chromosomes, click a point to jump to that chromosome"),
+                                                        div(class = "gb-plot-wrap", plotlyOutput("genome_overview_plot", height = "calc(max(320px, min(40vh, 420px)))", width = "100%")),
+                                                        plotly_export_ui("genome_overview_plot")),
+                                                   card(full_screen = TRUE,
+                                                        card_header(textOutput("browser_position_header", inline = TRUE)),
+                                                        div(class = "gb-toolbar",
+                                                            div(class = "gb-toolbar-group gb-search-group",
+                                                                textInput("browser_search", label = NULL, placeholder = "e.g. 12:25000000-26000000, 12_25000000, or KRAS", width = "100%"),
+                                                                actionButton("browser_search_go", NULL, icon = bs_icon("search"), class = "btn-sm btn-outline-secondary")),
+                                                            div(class = "gb-toolbar-group gb-nav-group",
+                                                                actionButton("prev_chr", NULL, icon = bs_icon("chevron-left"), class = "btn-sm btn-outline-secondary"),
+                                                                selectInput("browser_chr", NULL, choices = chrom_list, selected = "1", width = "90px"),
+                                                                actionButton("next_chr", NULL, icon = bs_icon("chevron-right"), class = "btn-sm btn-outline-secondary")),
+                                                            div(class = "gb-toolbar-group gb-zoom-group",
+                                                                actionButton("zoom_in", NULL, icon = bs_icon("zoom-in"), class = "btn-sm btn-outline-secondary"),
+                                                                actionButton("zoom_out", NULL, icon = bs_icon("zoom-out"), class = "btn-sm btn-outline-secondary"),
+                                                                actionButton("zoom_reset", "Whole chromosome", icon = bs_icon("arrow-counterclockwise"), class = "btn-sm btn-outline-secondary"))),
+                                                        div(class = "gb-plot-wrap", plotlyOutput("browser_chr_plot", height = "calc(max(440px, min(72vh, 760px)))", width = "100%")),
+                                                        plotly_export_ui("browser_chr_plot"),
+                                                        plot_desc("Tumor vs Normal methylation line-by-line across one chromosome."),
+                                                        tags$div("Tip: bins currently in your sidebar selection are outlined on the plot above. Drag on the plot to zoom in, double-click to reset, or use the range slider below the plot to pan across the chromosome. Use the expand icon in the card header to view the plot full-screen.",
+                                                                 style = "font-size:11px; color:#7d92a3; margin-top:6px;")),
+                                                   card(card_header("External Resources for This Region"), uiOutput("browser_external_links"))),
                                          
                                          # 2. Genome-wide Profile
                                          nav_panel("Genome-wide Profile", div(style = "font-size:13px; color:#6c757d; margin-bottom:10px;","Genome-wide Tumor vs. Normal methylation across 1 Mb bins. Significant bins (q < 0.05) and top 5% extreme differences are flagged. Hover for details; drag to zoom, double-click to reset, and use the camera icon to export."),
-                                                   card(card_header("Manhattan-style plot: Tumor \u2212 Normal methylation difference"), plotlyOutput("manhattan_plot", height = "550px"), plot_desc("Every bin's Tumor\u2212Normal difference across the whole genome, colours mark statistically significant and outlier bins."),
+                                                   card(card_header("Manhattan-style plot: Tumor \u2212 Normal methylation difference"), plotlyOutput("manhattan_plot", height = "calc(max(360px, min(58vh, 620px)))"), plotly_export_ui("manhattan_plot"), plot_desc("Every bin's Tumor\u2212Normal difference across the whole genome, colours mark statistically significant and outlier bins."),
                                                         div(style = "display:flex; gap:20px; flex-wrap:wrap; margin-top:12px; padding-top:10px; border-top:1px solid #e3e8ec; font-size:12px; color:#3a5470;",
                                                             tags$span(tags$span(style = "display:inline-block; width:10px; height:10px; border-radius:50%; background:#8D99AE; margin-right:6px;"), "Significant hypermethylation (q < 0.05)"),
                                                             tags$span(tags$span(style = "display:inline-block; width:10px; height:10px; border-radius:50%; background:#76C893; margin-right:6px;"), "Significant hypomethylation (q < 0.05)"),
@@ -806,6 +1061,7 @@ ui <- page_sidebar(title = div(style = "display:flex; justify-content:space-betw
                                                                                                 actionButton("heatmap_zoom_reset", "Reset (100%)", icon = bs_icon("arrow-counterclockwise"), class = "btn-sm btn-outline-secondary"))),
                                                                                         tags$div(id = "heatmap_scroll_container", style = "overflow:auto; width:100%; height:92vh; border:1px solid #e3e8ec; border-radius:8px; background:#ffffff;",
                                                                                                  plotOutput("feature_heatmap")),
+                                                                                        plot_export_ui("feature_heatmap"),
                                                                                         tags$script(HTML("
                                                                                           $(document).on('click', '#heatmap_zoom_fit', function() {
                                                                                             var el = document.getElementById('heatmap_scroll_container');
@@ -821,11 +1077,11 @@ ui <- page_sidebar(title = div(style = "display:flex; justify-content:space-betw
                                          
                                          # 5. Clinical Explorer
                                          nav_panel("Clinical Explorer", div(style = "font-size:13px; color:#6c757d; margin-bottom:10px;", "Compare tumor methylation by mutation status, and cross-reference patients against their full clinical profile. Filter the patient set below to restrict both the boxplot and the table to a specific subgroup. Click a row in the table to highlight that patient in the plot; use the search box or column filters to narrow the table down further."),
-                                                   uiOutput("selected_patient_banner"), layout_columns(col_widths = c(5, 7), card(card_header("Methylation by mutation status"),
-                                                                                                                                  div(style = "display:flex; flex-wrap:wrap; gap:18px; align-items:flex-end; margin-bottom:6px;",
-                                                                                                                                      div(style = "min-width:160px;", selectInput("mutation_gene", "Gene:", choices = c("KRAS", "BRAF", "TP53"))),
-                                                                                                                                      div(style = "min-width:220px;", radioButtons("mutation_stat_test", "Statistical test:", choices = c("Wilcoxon rank-sum" = "wilcox", "Welch's t-test" = "ttest"), selected = "wilcox", inline = TRUE))),
-                                                                                                                                  plotOutput("clinical_boxplot", height = "420px"), plot_desc("Compares mutant vs wild-type methylation, with a p-value (Wilcoxon or Welch's t-test), among patients currently matching the filters above.")),
+                                                   uiOutput("selected_patient_banner"), layout_columns(col_widths = breakpoints(sm = 12, md = 12, lg = c(5, 7)), card(card_header("Methylation by mutation status"),
+                                                                                                                                                                      div(style = "display:flex; flex-wrap:wrap; gap:18px; align-items:flex-end; margin-bottom:6px;",
+                                                                                                                                                                          div(style = "min-width:160px;", selectInput("mutation_gene", "Gene:", choices = c("KRAS", "BRAF", "TP53"))),
+                                                                                                                                                                          div(style = "min-width:220px;", radioButtons("mutation_stat_test", "Statistical test:", choices = c("Wilcoxon rank-sum" = "wilcox", "Welch's t-test" = "ttest"), selected = "wilcox", inline = TRUE))),
+                                                                                                                                                                      plotOutput("clinical_boxplot", height = "calc(max(300px, min(46vh, 460px)))"), plot_export_ui("clinical_boxplot"), plot_desc("Compares mutant vs wild-type methylation, with a p-value (Wilcoxon or Welch's t-test), among patients currently matching the filters above.")),
                                                                                                        card(card_header(div(style = "display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;",
                                                                                                                             div(style = "display:flex; align-items:center; gap:8px;", bs_icon("table", size = "1.05em"), "Clinical metadata explorer"),
                                                                                                                             uiOutput("clinical_table_count_badge"))),
@@ -875,7 +1131,7 @@ ui <- page_sidebar(title = div(style = "display:flex; justify-content:space-betw
                                          
                                          # 7. Tumor vs Normal
                                          nav_panel("Tumor vs. Normal", navset_tab(
-                                           nav_panel("Methylation density", card(full_screen = TRUE, card_header("Methylation density (Tumor vs Normal)"), plotOutput("tn_density", height = "58vh"), plot_desc("Shape of the methylation distribution, Tumor vs Normal overlapped."))),
+                                           nav_panel("Methylation density", card(full_screen = TRUE, card_header("Methylation density (Tumor vs Normal)"), plotOutput("tn_density", height = "58vh"), plot_export_ui("tn_density"), plot_desc("Shape of the methylation distribution, Tumor vs Normal overlapped."))),
                                            nav_panel("PCA / UMAP", card(full_screen = TRUE, card_header("PCA / UMAP (interactive)"),
                                                                         div(style = "display:flex; flex-wrap:wrap; gap:18px; align-items:flex-end; margin-bottom:10px;",
                                                                             div(style = "min-width:160px;", radioButtons("proj_method", "Method:", choices = c("PCA", "UMAP"), inline = TRUE)),
@@ -883,6 +1139,7 @@ ui <- page_sidebar(title = div(style = "display:flex; justify-content:space-betw
                                                                             div(style = "min-width:150px;", selectInput("proj_ydim", "Y axis:", choices = setNames(1:10, paste0("Component ", 1:10)), selected = 2)),
                                                                             div(style = "min-width:260px; flex:1 1 260px;", selectizeInput("proj_samples", "Samples (optional filter):", choices = NULL, multiple = TRUE, options = list(placeholder = "All samples (leave empty to include everyone)...", plugins = list("remove_button"))))),
                                                                         plotlyOutput("tn_projection", height = "54vh"),
+                                                                        plotly_export_ui("tn_projection"),
                                                                         plot_desc("PCA finds the directions where samples vary the most, UMAP groups similar samples together. Pick any of the first 10 components/dimensions for each axis (PCA1\u2013PCA10 / UMAP1\u2013UMAP10), and optionally restrict the projection to specific samples."))),
                                            nav_panel("Patient similarity network", card(full_screen = TRUE, card_header("Patient similarity network"),
                                                                                         div(style = "display:flex; flex-wrap:wrap; gap:18px; align-items:flex-end; margin-bottom:10px;",
@@ -892,6 +1149,7 @@ ui <- page_sidebar(title = div(style = "display:flex; justify-content:space-betw
                                                                                             div(style = "min-width:240px; max-width:340px; flex:1 1 260px;",
                                                                                                 sliderInput("network_corr_threshold", "Minimum correlation for an edge (corr \u2265):", min = -1, max = 1, value = 0.7, step = 0.01, width = "100%"))),
                                                                                         plotOutput("tn_network", height = "54vh"),
+                                                                                        plot_export_ui("tn_network"),
                                                                                         plot_desc("Each dot is one sample (Tumor or Normal, shown separately, as in the metadata table): a circle for Tumor and a triangle for Normal. Lines connect sample pairs whose methylation profiles correlate at or above the chosen threshold, so you can see at a glance whether the samples that resemble each other are Tumor or Normal. Pick more than one colour variable to compare side by side.")))))),
                    div(style = "display:flex; align-items:center; justify-content:center; gap:18px; margin-top:24px; padding:16px 0; border-top:1px solid #dde3e8; color:#6c757d; font-size:13px;", tags$span("Paula Artiz Dueñas, Bioinformatics Student", style = "margin-left:10px;")))
 
@@ -899,10 +1157,7 @@ ui <- page_sidebar(title = div(style = "display:flex; justify-content:space-betw
 
 server <- function(input, output, session) {
   
-  # "Selected bins:" always offers only the currently chosen chromosome's bins, plus anything
-  # already selected (even from a different chromosome, so cross-chromosome picks aren't lost when
-  # you browse elsewhere). Without this, the dropdown's unfiltered list was always bin_table$bin_id
-  # in genome order, so opening it after picking e.g. chr4 still showed chr1 bins first.
+  # "Selected bins:" always offers only the currently chosen chromosome's bins
   bins_choices_for_chr <- function(chr, extra = character(0)) {
     union(bin_choices_by_chr[[chr]], extra)
   }
@@ -988,6 +1243,11 @@ server <- function(input, output, session) {
   output$n_samples <- renderText({ nrow(metadata) })
   output$n_patients <- renderText({ length(unique(metadata$patient_id)) })
   
+  # 0. Home: clicking a hero button or a "Key Functionalities" card sets home_nav_target
+  observeEvent(input$home_nav_target, {
+    nav_select("main_nav", selected = input$home_nav_target, session = session)
+  })
+  
   # 1. Overview
   
   overview_ml_selected <- reactive({
@@ -1047,11 +1307,12 @@ server <- function(input, output, session) {
           div(style = "display:flex; justify-content:space-between; align-items:center; width:100%;",
               tags$span(pm$title),
               actionButton(paste0("expand_", pm$id), NULL, icon = bs_icon("arrows-fullscreen"),class = "btn-sm btn-outline-secondary", title = "Expand", style = "padding:2px 7px; margin-left:auto; margin-right:-5px;"))),
-          plotOutput(pm$id, height = "300px", click = paste0(pm$id, "_click")),
-          plot_desc(pm$desc), # Show graphs descriptions
-          height = "350px")
+          plotOutput(pm$id, height = "calc(max(230px, min(34vh, 320px)))", click = paste0(pm$id, "_click")),
+          plot_export_ui(pm$id),
+          plot_desc(pm$desc)) # Show graphs descriptions
       })
-      do.call(layout_columns, c(list(col_widths = c(6, 6), row_heights = c("425px")), card_list))
+      # stacks to a single column on phones/tablets (< md), 2x2 grid from tablet-landscape/desktop (md) up
+      do.call(layout_columns, c(list(col_widths = breakpoints(sm = 12, md = 6), row_heights = "auto"), card_list))
       
     } else {
       # enlarged single-plot view, with a button to go back to the 2x2 grid
@@ -1059,16 +1320,12 @@ server <- function(input, output, session) {
       tagList(
         div(style = "margin-bottom:10px;",
             actionButton("overview_back", "Go back to Overview", icon = bs_icon("arrow-left-circle"), class = "btn-sm btn-outline-primary")),
-        card(card_header(meta$title), plotOutput(meta$id, height = "600px"), height = "650px"))
+        card(card_header(meta$title), plotOutput(meta$id, height = "calc(max(360px, min(64vh, 640px)))"), plot_export_ui(meta$id)))
     }
   })
   
-  output$overview_sex_comparison <- renderPlot({
-    # Counted at the patient level (via overview_patient_shift), not per bin-row. Sex itself never
-    # varies with the selected bins, but the Tumor-Normal shift does, so this compares that shift
-    # between males and females for whatever region is currently selected (most informative on
-    # chrX/chrY, where a sex effect on methylation is expected).
-    df <- overview_patient_shift()
+  overview_sex_comparison_build <- reactive({
+    # Counted at the patient level (via overview_patient_shift), not per bin-row
     validate(need(!is.null(df) && nrow(df) > 0, "No data available for the current selection."))
     
     sex_labels <- c("Dona" = "Female", "Home" = "Male")
@@ -1099,29 +1356,51 @@ server <- function(input, output, session) {
       p <- p + annotate("text", x = 1.5, y = y_max * 1.12, label = test_res$label, size = 3.2, color = "#16324f", fontface = "bold") +
         scale_y_continuous(expand = expansion(mult = c(0.05, 0.14)))
     }
-    p
+    list(plot = p, data = df[, c("patient_id", "Sex", "shift")])
   })
+  output$overview_sex_comparison <- renderPlot({ overview_sex_comparison_build()$plot })
+  register_plot_export(output, "overview_sex_comparison",
+                       function() overview_sex_comparison_build()$plot,
+                       function() overview_sex_comparison_build()$data)
   
-  output$overview_boxplot <- renderPlot({
-    df <- selected_bin_table()
-    validate(need(nrow(df) > 0, "No bins selected. Choose a chromosome or bins in the sidebar."))
-    plot_df <- data.frame( Type = rep(c("Normal", "Tumor"), each = nrow(df)), Methylation = c(df$mean_methylation_normal, df$mean_methylation_tumor))
-    plot_df <- plot_df[is.finite(plot_df$Methylation), ]
-    validate(need(nrow(plot_df) > 0, "No valid methylation values for the current selection."))
+  # TRUE when the user wants raw per-sample values instead of pre-aggregated per-bin means
+  view_by_samples <- reactive({ identical(input$view_level, "samples") })
+  
+  overview_boxplot_build <- reactive({
+    if (view_by_samples()) {
+      df <- overview_ml_selected()
+      validate(need(nrow(df) > 0, "No bins selected. Choose a chromosome or bins in the sidebar."))
+      plot_df <- data.frame(Type = df$Type, Methylation = df$methylation)
+      plot_df <- plot_df[is.finite(plot_df$Methylation) & plot_df$Type %in% c("Normal", "Tumor"), ]
+      validate(need(nrow(plot_df) > 0, "No valid methylation values for the current selection."))
+      y_lab <- "Methylation (per sample \u00d7 bin)"
+    } else {
+      df <- selected_bin_table()
+      validate(need(nrow(df) > 0, "No bins selected. Choose a chromosome or bins in the sidebar."))
+      plot_df <- data.frame( Type = rep(c("Normal", "Tumor"), each = nrow(df)), Methylation = c(df$mean_methylation_normal, df$mean_methylation_tumor))
+      plot_df <- plot_df[is.finite(plot_df$Methylation), ]
+      validate(need(nrow(plot_df) > 0, "No valid methylation values for the current selection."))
+      y_lab <- "Mean methylation (per bin)"
+    }
     plot_df$Type <- factor(plot_df$Type, levels = c("Normal", "Tumor"))
     
-    ggplot(plot_df, aes(x = Type, y = Methylation, fill = Type)) +
+    p <- ggplot(plot_df, aes(x = Type, y = Methylation, fill = Type)) +
       geom_jitter(width = 0.07, size = 0.9, alpha = 0.25, color = "#16324f") +
       geom_boxplot(width = 0.45, outlier.shape = NA, alpha = 0.92, color = "#16324f", linewidth = 0.4) +
       stat_summary(fun = mean, geom = "point", shape = 23, size = 2.4, fill = "white", color = "#16324f", stroke = 0.8) +
       scale_fill_manual(values = c("Tumor" = "#d1495b", "Normal" = "#3aa9c9")) +
       scale_y_continuous(limits = c(0, 1), expand = expansion(mult = c(0.02, 0.06))) +
-      labs(x = NULL, y = "Mean methylation (per bin)", subtitle = region_label(), caption = "\u25c7 mean") +
+      labs(x = NULL, y = y_lab, subtitle = region_label(), caption = "\u25c7 mean") +
       theme_app() +
       theme(legend.position = "none")
+    list(plot = p, data = plot_df)
   })
+  output$overview_boxplot <- renderPlot({ overview_boxplot_build()$plot })
+  register_plot_export(output, "overview_boxplot",
+                       function() overview_boxplot_build()$plot,
+                       function() overview_boxplot_build()$data)
   
-  output$overview_mutations <- renderPlot({
+  overview_mutations_build <- reactive({
     df <- overview_patient_shift()
     genes <- c("KRAS", "BRAF", "TP53")
     long_df <- do.call(rbind, lapply(genes, function(g) {
@@ -1140,7 +1419,7 @@ server <- function(input, output, session) {
       paste0(long_df$Gene, " (n=", n_by_gene[long_df$Gene], ")"),
       levels = paste0(genes, " (n=", n_by_gene[genes], ")"))
     
-    ggplot(long_df, aes(x = Status, y = Shift, fill = Status)) +
+    p <- ggplot(long_df, aes(x = Status, y = Shift, fill = Status)) +
       geom_hline(yintercept = 0, color = "#7d92a3", linewidth = 0.4, linetype = "dashed") +
       geom_jitter(width = 0.1, size = 0.9, alpha = 0.3, color = "#16324f") +
       geom_boxplot(width = 0.5, outlier.shape = NA, alpha = 0.92, color = "#16324f", linewidth = 0.4) +
@@ -1149,9 +1428,14 @@ server <- function(input, output, session) {
       labs(x = NULL, y = "Methylation shift (Tumor \u2212 Normal)", subtitle = region_label()) +
       theme_app() + # Predefined before
       theme(legend.position = "none", axis.text.x = element_text(angle = 20, hjust = 1))
+    list(plot = p, data = long_df[, c("Gene", "Status", "Shift")])
   })
+  output$overview_mutations <- renderPlot({ overview_mutations_build()$plot })
+  register_plot_export(output, "overview_mutations",
+                       function() overview_mutations_build()$plot,
+                       function() overview_mutations_build()$data)
   
-  output$overview_composition <- renderPlot({
+  overview_composition_build <- reactive({
     df <- overview_patient_shift()
     feats <- c("estadi2", "MSS")
     long_df <- do.call(rbind, lapply(feats, function(f) {
@@ -1170,7 +1454,7 @@ server <- function(input, output, session) {
     agg$FeatureLabel <- factor(feature_display[agg$Feature], levels = feature_display[feats])
     agg$Level <- factor(agg$Level, levels = natural_level_order(agg$Level))
     
-    ggplot(agg, aes(x = Level, y = Shift, fill = Feature)) +
+    p <- ggplot(agg, aes(x = Level, y = Shift, fill = Feature)) +
       geom_hline(yintercept = 0, color = "#7d92a3", linewidth = 0.4) +
       geom_col(width = 0.6, show.legend = FALSE) +
       geom_text(aes(y = Shift, label = paste0("n=", n), vjust = ifelse(Shift >= 0, -0.5, 1.3)), size = 2.7, color = "#16324f") +
@@ -1179,7 +1463,12 @@ server <- function(input, output, session) {
       facet_wrap(~ FeatureLabel, scales = "free_x", nrow = 1) +
       labs(x = NULL, y = "Mean methylation shift (Tumor \u2212 Normal)", subtitle = region_label()) +
       theme_app()
+    list(plot = p, data = agg[, c("Feature", "FeatureLabel", "Level", "Shift", "n")])
   })
+  output$overview_composition <- renderPlot({ overview_composition_build()$plot })
+  register_plot_export(output, "overview_composition",
+                       function() overview_composition_build()$plot,
+                       function() overview_composition_build()$data)
   
   # 2. Genome Browser
   nav <- reactiveValues(chr = NULL, start = NULL, end = NULL)
@@ -1288,30 +1577,81 @@ server <- function(input, output, session) {
       config(displayModeBar = FALSE, responsive = TRUE) |>
       event_register("plotly_click")
   })
+  register_plotly_export(output, "genome_overview_plot",
+                         function() genome_wide_bins[, c("bin_id", "chr", "bin_position", "genome_x", "overall_meth")])
+  
+  # per-sample-per-bin methylation values within the current genome browser window
+  browser_view_samples <- reactive({
+    bins_now <- browser_view_bins()
+    req(nrow(bins_now) > 0)
+    df <- ml_annot[ml_annot$bin_id %in% bins_now$bin_id, c("sample_id", "patient_id", "Type", "bin_id", "bin_position", "methylation")]
+    df[df$Type %in% c("Tumor", "Normal"), ]
+  })
   
   output$browser_chr_plot <- renderPlotly({
-    df <- browser_view_bins()
-    if (nrow(df) == 0) {
-      return(
-        plotly_empty(type = "scatter", mode = "markers") |>
-          layout(title = list(text = "No bins in this region", font = list(size = 14))) |>
-          config(displayModeBar = FALSE, responsive = TRUE))
+    if (view_by_samples()) {
+      df <- browser_view_samples()
+      if (nrow(df) == 0) {
+        return(
+          plotly_empty(type = "scatter", mode = "markers") |>
+            layout(title = list(text = "No bins in this region", font = list(size = 14))) |>
+            config(displayModeBar = FALSE, responsive = TRUE))
+      }
+      hl <- df$bin_id %in% input$bins
+      base_size <- max(3, min(8, 4000 / nrow(df)))
+      hl_size <- base_size + 4
+      p <- plot_ly(df, x = ~bin_position / 1e6)
+      for (ty in c("Tumor", "Normal")) {
+        sub <- df[df$Type == ty, ]
+        hl_sub <- sub$bin_id %in% input$bins
+        p <- add_trace(p, data = sub, x = ~bin_position / 1e6, y = ~methylation, type = "scatter", mode = "markers", name = ty,
+                       marker = list(color = if (ty == "Tumor") "#d1495b" else "#3aa9c9",
+                                     size = ifelse(hl_sub, hl_size, base_size),
+                                     opacity = 0.55,
+                                     line = list(color = "#0b2436", width = ifelse(hl_sub, 1.2, 0))),
+                       text = ~paste0(bin_id, "<br>Sample: ", sample_id, "<br>Patient: ", patient_id, "<br>", ty, ": ", round(methylation, 3)),
+                       hoverinfo = "text")
+      }
+      p |>
+        layout(xaxis = list(title = paste0("Position on chr", nav$chr, " (Mb)"), automargin = TRUE,
+                            rangeslider = list(visible = TRUE, thickness = 0.08, bgcolor = "#eef2f5", bordercolor = "#d8e0e6", borderwidth = 1)),
+               yaxis = list(title = "Methylation (per sample)", range = c(0, 1), automargin = TRUE),
+               legend = list(orientation = "h", x = 0.5, xanchor = "center", y = 1, yanchor = "bottom"),
+               hovermode = "closest",
+               margin = list(t = 50, r = 20, b = 50, l = 55),
+               autosize = TRUE) |>
+        config(displayModeBar = FALSE, responsive = TRUE)
+    } else {
+      df <- browser_view_bins()
+      if (nrow(df) == 0) {
+        return(
+          plotly_empty(type = "scatter", mode = "markers") |>
+            layout(title = list(text = "No bins in this region", font = list(size = 14))) |>
+            config(displayModeBar = FALSE, responsive = TRUE))
+      }
+      # only highlight bins the user actually picked in the sidebar
+      hl <- df$bin_id %in% input$bins
+      base_size <- max(4, min(9, 700 / nrow(df)))
+      hl_size <- base_size + 5
+      plot_ly(df, x = ~bin_position / 1e6) |>
+        add_trace(y = ~mean_methylation_tumor, type = "scatter", mode = "lines+markers", name = "Tumor",line = list(color = "#d1495b", width = 1.6),
+                  marker = list(color = "#d1495b", size = ifelse(hl, hl_size, base_size), line = list(color = "#0b2436", width = ifelse(hl, 1.5, 0))),
+                  text = ~paste0(bin_id, "<br>Tumor mean: ", round(mean_methylation_tumor, 3)), hoverinfo = "text") |>
+        add_trace(y = ~mean_methylation_normal, type = "scatter", mode = "lines+markers", name = "Normal",
+                  line = list(color = "#3aa9c9", width = 1.6), marker = list(color = "#3aa9c9", size = ifelse(hl, hl_size, base_size),line = list(color = "#0b2436", width = ifelse(hl, 1.5, 0))),
+                  text = ~paste0(bin_id, "<br>Normal mean: ", round(mean_methylation_normal, 3)), hoverinfo = "text") |>
+        layout(xaxis = list(title = paste0("Position on chr", nav$chr, " (Mb)"), automargin = TRUE,
+                            rangeslider = list(visible = TRUE, thickness = 0.08, bgcolor = "#eef2f5", bordercolor = "#d8e0e6", borderwidth = 1)),
+               yaxis = list(title = "Mean methylation", range = c(0, 1), automargin = TRUE),
+               legend = list(orientation = "h", x = 0.5, xanchor = "center", y = 1, yanchor = "bottom"),
+               hovermode = "x unified",
+               margin = list(t = 50, r = 20, b = 50, l = 55),
+               autosize = TRUE) |>
+        config(displayModeBar = FALSE, responsive = TRUE)
     }
-    # only highlight bins the user actually picked in the sidebar
-    hl <- df$bin_id %in% input$bins
-    plot_ly(df, x = ~bin_position / 1e6) |>
-      add_trace(y = ~mean_methylation_tumor, type = "scatter", mode = "lines+markers", name = "Tumor",line = list(color = "#d1495b"),
-                marker = list(color = "#d1495b", size = ifelse(hl, 11, 6), line = list(color = "#0b2436", width = ifelse(hl, 1.5, 0))),
-                text = ~paste0(bin_id, "<br>Tumor mean: ", round(mean_methylation_tumor, 3)), hoverinfo = "text") |>
-      add_trace(y = ~mean_methylation_normal, type = "scatter", mode = "lines+markers", name = "Normal",
-                line = list(color = "#3aa9c9"), marker = list(color = "#3aa9c9", size = ifelse(hl, 11, 6),line = list(color = "#0b2436", width = ifelse(hl, 1.5, 0))),
-                text = ~paste0(bin_id, "<br>Normal mean: ", round(mean_methylation_normal, 3)), hoverinfo = "text") |>
-      layout(xaxis = list(title = paste0("Position on chr", nav$chr, " (Mb)"), automargin = TRUE),
-             yaxis = list(title = "Mean methylation", range = c(0, 1), automargin = TRUE),
-             legend = list(orientation = "h", x = 0.5, xanchor = "center", y = 1, yanchor = "bottom"),
-             margin = list(t = 50, r = 20, b = 50, l = 55),
-             autosize = TRUE) |>
-      config(displayModeBar = FALSE, responsive = TRUE)
+  })
+  register_plotly_export(output, "browser_chr_plot", function() {
+    if (view_by_samples()) browser_view_samples() else browser_view_bins()[, c("bin_id", "chr", "bin_position", "mean_methylation_tumor", "mean_methylation_normal")]
   })
   
   # 3. Tumor vs. Normal
@@ -1334,8 +1674,7 @@ server <- function(input, output, session) {
     mat
   })
   
-  # sample x bin matrix of raw methylation (Tumor and Normal kept as separate rows) for the selected bins, used by the
-  # patient similarity network so it can show whether similar samples are Tumor or Normal
+  # sample x bin matrix of raw methylation (Tumor and Normal kept as separate rows) for the selected bins
   network_sample_matrix <- reactive({
     bins_now <- selected_bins()
     req(length(bins_now) > 0)
@@ -1348,24 +1687,39 @@ server <- function(input, output, session) {
     mat
   })
   
-  output$tn_density <- renderPlot({
-    df <- selected_bin_table()
-    validate(need(nrow(df) > 0, "No bins selected. Choose a chromosome or bins in the sidebar."))
-    plot_df <- data.frame(Type = rep(c("Tumor", "Normal"), each = nrow(df)),
-                          Methylation = c(df$mean_methylation_tumor, df$mean_methylation_normal))
-    plot_df <- plot_df[is.finite(plot_df$Methylation), ]
-    validate(need(nrow(plot_df) > 0, "No valid methylation values for the current selection."))
+  tn_density_build <- reactive({
+    if (view_by_samples()) {
+      df <- ml_annot[ml_annot$bin_id %in% selected_bins() & ml_annot$Type %in% c("Tumor", "Normal"), c("Type", "methylation")]
+      validate(need(nrow(df) > 0, "No bins selected. Choose a chromosome or bins in the sidebar."))
+      plot_df <- data.frame(Type = df$Type, Methylation = df$methylation)
+      plot_df <- plot_df[is.finite(plot_df$Methylation), ]
+      validate(need(nrow(plot_df) > 0, "No valid methylation values for the current selection."))
+      x_lab <- "Methylation (per sample \u00d7 bin)"
+    } else {
+      df <- selected_bin_table()
+      validate(need(nrow(df) > 0, "No bins selected. Choose a chromosome or bins in the sidebar."))
+      plot_df <- data.frame(Type = rep(c("Tumor", "Normal"), each = nrow(df)),
+                            Methylation = c(df$mean_methylation_tumor, df$mean_methylation_normal))
+      plot_df <- plot_df[is.finite(plot_df$Methylation), ]
+      validate(need(nrow(plot_df) > 0, "No valid methylation values for the current selection."))
+      x_lab <- "Mean methylation (per bin)"
+    }
     
-    ggplot(plot_df, aes(x = Methylation, fill = Type, color = Type)) +
+    p <- ggplot(plot_df, aes(x = Methylation, fill = Type, color = Type)) +
       geom_density(alpha = 0.35, linewidth = 0.9, na.rm = TRUE) +
       scale_fill_manual(values = c("Tumor" = "#d1495b", "Normal" = "#3aa9c9")) +
       scale_color_manual(values = c("Tumor" = "#d1495b", "Normal" = "#3aa9c9")) +
-      labs(x = "Mean methylation (per bin)", y = "Density", title = region_label(), fill = NULL, color = NULL) +
+      labs(x = x_lab, y = "Density", title = region_label(), fill = NULL, color = NULL) +
       theme_minimal(base_size = 12) +
       theme(legend.position = "top")
+    list(plot = p, data = plot_df)
   })
+  output$tn_density <- renderPlot({ tn_density_build()$plot })
+  register_plot_export(output, "tn_density",
+                       function() tn_density_build()$plot,
+                       function() tn_density_build()$data)
   
-  output$tn_projection <- renderPlotly({
+  tn_projection_build <- reactive({
     method <- input$proj_method
     if (is.null(method)) method <- "PCA"
     mat <- projection_matrix()
@@ -1405,16 +1759,19 @@ server <- function(input, output, session) {
     coords$sample_id <- rownames(mat)
     coords <- merge(coords, metadata[, c("sample_id", "patient_id", "Type", "sexe")], by = "sample_id")
     
-    plot_ly(coords, x = ~Dim1, y = ~Dim2, color = ~Type,
-            colors = c("Tumor" = "#d1495b", "Normal" = "#3aa9c9"),
-            type = "scatter", mode = "markers",
-            marker = list(size = 10, line = list(color = "#0b2436", width = 1)),
-            text = ~paste0("Sample: ", sample_id, "<br>Patient: ", patient_id, "<br>Type: ", Type),
-            hoverinfo = "text") |>
+    p <- plot_ly(coords, x = ~Dim1, y = ~Dim2, color = ~Type,
+                 colors = c("Tumor" = "#d1495b", "Normal" = "#3aa9c9"),
+                 type = "scatter", mode = "markers",
+                 marker = list(size = 10, line = list(color = "#0b2436", width = 1)),
+                 text = ~paste0("Sample: ", sample_id, "<br>Patient: ", patient_id, "<br>Type: ", Type),
+                 hoverinfo = "text") |>
       layout(xaxis = list(title = xlab), yaxis = list(title = ylab), legend = list(orientation = "h", x = 0, y = 1.08))
+    list(plot = p, data = coords)
   })
+  output$tn_projection <- renderPlotly({ tn_projection_build()$plot })
+  register_plotly_export(output, "tn_projection", function() tn_projection_build()$data)
   
-  output$tn_network <- renderPlot({
+  tn_network_build <- reactive({
     mat <- network_sample_matrix()
     validate(need(!is.null(mat), "Not enough overlapping data across samples for the selected bins to build a similarity network."))
     
@@ -1454,9 +1811,7 @@ server <- function(input, output, session) {
     
     type_shapes <- c("Tumor" = 21, "Normal" = 24, "unknown" = 22)
     
-    # builds one coloured network panel for a single variable; reused per feature so several can be shown side by side.
-    # point SHAPE always encodes Tumor/Normal (circle vs triangle) so that distinction stays visible no matter which
-    # variable is used for colour.
+    # builds one coloured network panel for a single variable; reused per feature so several can be shown side by side
     make_network_panel <- function(feature, show_subtitle) {
       nodes <- nodes_base
       nodes$color_label <- as.character(nodes[[feature]])
@@ -1483,7 +1838,7 @@ server <- function(input, output, session) {
               panel.grid.minor = element_blank())
     }
     
-    if (length(features) == 1) {
+    p <- if (length(features) == 1) {
       make_network_panel(features[1], show_subtitle = TRUE)
     } else {
       panels <- lapply(features, make_network_panel, show_subtitle = FALSE)
@@ -1496,7 +1851,14 @@ server <- function(input, output, session) {
                         plot.subtitle = element_text(size = 10, color = "#7d92a3"))) &
         theme(legend.position = "bottom")
     }
+    node_export <- nodes_base[, intersect(c("sample_id", "patient_id", "Type", "x", "y", features), names(nodes_base))]
+    list(plot = p, data = node_export)
   })
+  output$tn_network <- renderPlot({ tn_network_build()$plot })
+  register_plot_export(output, "tn_network",
+                       function() tn_network_build()$plot,
+                       function() tn_network_build()$data,
+                       width = 10, height = 7)
   
   # 4. Genome-wide Profile
   output$manhattan_plot <- renderPlotly({
@@ -1523,11 +1885,10 @@ server <- function(input, output, session) {
       config(displayModeBar = TRUE,
              toImageButtonOptions = list(format = "png", filename = "genome_wide_methylation_profile"))
   })
+  register_plotly_export(output, "manhattan_plot",
+                         function() genome_wide_bins[, c("bin_id", "chr", "bin_position", "mean_diff_tumor_normal", "q_value", "n", "manhattan_category")])
   
   # 5. Feature × Chromosome Heatmap
-  # bins beyond this count aren't clustered/drawn as a column dendrogram (hclust on that many
-  # columns is slow and the dendrogram/labels become unreadable); the heatmap falls back to
-  # genome order for the columns in that case
   max_dendro_bins <- 300
   
   # current zoom level (%), falling back to 100 before the slider has initialized
@@ -1540,14 +1901,6 @@ server <- function(input, output, session) {
     updateSliderInput(session, "heatmap_zoom", value = 100)
   })
   
-  # shrinks (or grows) the zoom level so the whole heatmap just fits in the space actually
-  # available, i.e. "see the complete graph" without scrolling.
-  # NOTE: we can't use session$clientData$output_feature_heatmap_width/height here, because the
-  # plot's own rendered size IS the zoom-dependent height/width below (it's set by us, not by the
-  # browser layout) - reading it back would just measure the plot against itself and the zoom
-  # level would barely move. Instead, the "Fit to screen" button (see JS in the UI) reports the
-  # real pixel size of the scrollable wrapper div via input$heatmap_container_dims, and we fit to
-  # that instead.
   observeEvent(input$heatmap_container_dims, {
     d <- heatmap_build()
     natural_w <- max(400, round(d$n_bins * 14 + 160))
@@ -1562,9 +1915,7 @@ server <- function(input, output, session) {
     }
   })
   
-  # all the data prep (matrix, clustering, dendrogram segments) as one reactive, so the plot body
-  # and the dynamic height/width functions below both reuse the same computation instead of
-  # rebuilding it twice on every render
+  # all the data prep (matrix, clustering, dendrogram segments) as one reactive
   heatmap_build <- reactive({
     feature <- input$heatmap_feature
     if (is.null(feature)) feature <- "none"
@@ -1588,8 +1939,7 @@ server <- function(input, output, session) {
     row_segments <- hclust_to_segments(row_hc)
     n_patients <- length(row_order)
     
-    # column dendrogram: cluster bins by their shift pattern across patients; skipped (falls back
-    # to genome order, no dendrogram drawn) when there are too many bins to cluster/draw sensibly
+    # column dendrogram: cluster bins by their shift pattern across patients
     show_col_dendro <- ncol(mat) >= 2 && ncol(mat) <= max_dendro_bins
     if (show_col_dendro) {
       col_hc <- hclust(dist(t(mat)))
@@ -1611,7 +1961,7 @@ server <- function(input, output, session) {
          row_segments = row_segments, col_segments = col_segments, show_col_dendro = show_col_dendro)
   })
   
-  output$feature_heatmap <- renderPlot({
+  feature_heatmap_build <- reactive({
     d <- heatmap_build()
     
     # main heatmap uses numeric x/y (rather than discrete scales) so its tile positions line up
@@ -1637,17 +1987,19 @@ server <- function(input, output, session) {
       plot_spacer()
     }
     
+    heatmap_export_data <- d$shift_df[, c("patient_id", "bin_id", "chr", "meth_tumor", "meth_normal", "shift")]
+    
     if (identical(d$feature, "none")) {
       design <- "
       AB
       CD
       "
-      return(plot_spacer() + col_dendro + row_dendro + p_main +
-               patchwork::plot_layout(design = design, widths = c(1, 8), heights = c(1, 8)))
+      p_none <- plot_spacer() + col_dendro + row_dendro + p_main +
+        patchwork::plot_layout(design = design, widths = c(1, 8), heights = c(1, 8))
+      return(list(plot = p_none, data = heatmap_export_data))
     }
     
     # colour strip for the chosen clinical feature, row-aligned with the main heatmap's row order
-    # (the feature no longer controls row order, only this strip's colouring)
     ann_df <- patient_annotation[patient_annotation$patient_id %in% d$row_order, ]
     ann_df$patient_id <- factor(ann_df$patient_id, levels = d$row_order)
     ann_df$y <- as.integer(ann_df$patient_id)
@@ -1673,14 +2025,15 @@ server <- function(input, output, session) {
     AAB
     CDE
     "
-    plot_spacer() + col_dendro + row_dendro + p_ann + p_main +
+    p_feat <- plot_spacer() + col_dendro + row_dendro + p_ann + p_main +
       patchwork::plot_layout(design = design, widths = c(1, 0.6, 8), heights = c(1, 8)) # plot_layout() from patchwork package
+    list(plot = p_feat, data = heatmap_export_data)
+  })
+  
+  output$feature_heatmap <- renderPlot({
+    feature_heatmap_build()$plot
   },
-  # the plot's rendered pixel size is the "natural" data-driven size (based on how many
-  # patients/bins are shown) scaled by the zoom slider: 100% is roughly one row/column's worth of
-  # pixels per patient/bin, below 100% shrinks it (so a big selection can be zoomed out to see
-  # the whole thing at once, e.g. via "Fit to screen"), above 100% enlarges it for detail (then
-  # scroll inside the plot area, or use the card's expand icon, to pan around)
+  # the plot's rendered pixel size is the "natural" data-driven size
   height = function() {
     d <- heatmap_build()
     natural_h <- max(300, round(d$n_patients * 20 + 160))
@@ -1691,6 +2044,10 @@ server <- function(input, output, session) {
     natural_w <- max(400, round(d$n_bins * 14 + 160))
     max(200, round(natural_w * heatmap_zoom_pct() / 100))
   })
+  register_plot_export(output, "feature_heatmap",
+                       function() feature_heatmap_build()$plot,
+                       function() feature_heatmap_build()$data,
+                       width = 12, height = 9)
   
   # 6. Clinical Explorer
   
@@ -1736,32 +2093,54 @@ server <- function(input, output, session) {
     selectRows(clinical_table_proxy, NULL)
   })
   
-  output$clinical_boxplot <- renderPlot({
+  clinical_boxplot_build <- reactive({
     gene <- input$mutation_gene
     req(gene)
     test_method <- input$mutation_stat_test
     if (is.null(test_method)) test_method <- "wilcox"
     
-    df <- overview_patient_shift()
-    validate(need(!is.null(df) && nrow(df) > 0, "No data available for the current bin selection."))
-    validate(need(gene %in% names(df), paste0(gene, " status is not available in this dataset.")))
-    
-    df <- df[df$patient_id %in% filtered_clinical_profile()$patient_id, ]
-    validate(need(nrow(df) > 0, "No patients match the current filters. Adjust the filters above."))
-    
     status_labels <- c("0" = "Wild-type", "1" = "Mutant")
-    status_raw <- as.character(df[[gene]])
-    df$Status <- ifelse(status_raw %in% names(status_labels), status_labels[status_raw], NA_character_)
-    df <- df[!is.na(df$Status) & is.finite(df$Tumor), ]
-    validate(need(length(unique(df$Status)) == 2,
-                  paste0("Need both Wild-type and Mutant tumor samples for ", gene, " in the current bin selection.")))
+    filtered_ids <- filtered_clinical_profile()$patient_id
+    
+    if (view_by_samples()) {
+      # one row per Tumor sample x selected bin (unaggregated), instead of one row per patient
+      validate(need(gene %in% names(patient_annotation), paste0(gene, " status is not available in this dataset.")))
+      bins_now <- selected_bins()
+      df <- ml_annot[ml_annot$bin_id %in% bins_now & ml_annot$Type == "Tumor", c("sample_id", "patient_id", "bin_id", "methylation")]
+      df <- df[df$patient_id %in% filtered_ids, ]
+      df <- merge(df, patient_annotation[, c("patient_id", gene)], by = "patient_id")
+      names(df)[names(df) == gene] <- "GeneStatus"
+      status_raw <- as.character(df$GeneStatus)
+      df$Status <- ifelse(status_raw %in% names(status_labels), status_labels[status_raw], NA_character_)
+      df$Value <- df$methylation
+      df <- df[!is.na(df$Status) & is.finite(df$Value), ]
+      validate(need(nrow(df) > 0, "No patients match the current filters. Adjust the filters above."))
+      validate(need(length(unique(df$Status)) == 2,
+                    paste0("Need both Wild-type and Mutant tumor samples for ", gene, " in the current bin selection.")))
+      y_lab <- "Tumor methylation (per sample \u00d7 bin)"
+    } else {
+      df <- overview_patient_shift()
+      validate(need(!is.null(df) && nrow(df) > 0, "No data available for the current bin selection."))
+      validate(need(gene %in% names(df), paste0(gene, " status is not available in this dataset.")))
+      
+      df <- df[df$patient_id %in% filtered_ids, ]
+      validate(need(nrow(df) > 0, "No patients match the current filters. Adjust the filters above."))
+      
+      status_raw <- as.character(df[[gene]])
+      df$Status <- ifelse(status_raw %in% names(status_labels), status_labels[status_raw], NA_character_)
+      df$Value <- df$Tumor
+      df <- df[!is.na(df$Status) & is.finite(df$Value), ]
+      validate(need(length(unique(df$Status)) == 2,
+                    paste0("Need both Wild-type and Mutant tumor samples for ", gene, " in the current bin selection.")))
+      y_lab <- "Mean tumor methylation (per bin)"
+    }
     df$Status <- factor(df$Status, levels = c("Wild-type", "Mutant"))
     
     n_by_status <- table(df$Status)
-    test_res <- run_group_test(df$Tumor[df$Status == "Mutant"], df$Tumor[df$Status == "Wild-type"], method = test_method)
-    y_max <- max(df$Tumor, na.rm = TRUE)
+    test_res <- run_group_test(df$Value[df$Status == "Mutant"], df$Value[df$Status == "Wild-type"], method = test_method)
+    y_max <- max(df$Value, na.rm = TRUE)
     
-    p <- ggplot(df, aes(x = Status, y = Tumor, fill = Status)) +
+    p <- ggplot(df, aes(x = Status, y = Value, fill = Status)) +
       geom_jitter(width = 0.08, size = 1.1, alpha = 0.35, color = "#16324f") +
       geom_boxplot(width = 0.45, outlier.shape = NA, alpha = 0.92, color = "#16324f", linewidth = 0.4) +
       stat_summary(fun = mean, geom = "point", shape = 23, size = 2.4, fill = "white", color = "#16324f", stroke = 0.8) +
@@ -1769,18 +2148,23 @@ server <- function(input, output, session) {
       scale_x_discrete(labels = paste0(levels(df$Status), "\n(n=", as.numeric(n_by_status[levels(df$Status)]), ")")) +
       annotate("text", x = 1.5, y = y_max * 1.1, label = test_res$label, size = 3.5, color = "#16324f", fontface = "bold") +
       scale_y_continuous(limits = c(0, max(1, y_max * 1.18)), expand = expansion(mult = c(0.02, 0.02))) +
-      labs( x = NULL, y = "Mean tumor methylation (per bin)", title = paste0(gene, " mutation status vs. tumor methylation"), subtitle = region_label()) +
+      labs( x = NULL, y = y_lab, title = paste0(gene, " mutation status vs. tumor methylation"), subtitle = region_label()) +
       theme_app() +
       theme(legend.position = "none")
     
     sel_id <- selected_patient_id()
     if (!is.null(sel_id) && sel_id %in% df$patient_id) {
       hl <- df[df$patient_id == sel_id, ]
-      p <- p + geom_point(data = hl, aes(x = Status, y = Tumor), shape = 21, size = 4.8, fill = "#e0a339", color = "#16324f", stroke = 1.1) +
-        geom_text(data = hl, aes(x = Status, y = Tumor, label = paste0("Patient ", patient_id)), vjust = -1.3, size = 3, color = "#16324f", fontface = "bold")
+      p <- p + geom_point(data = hl, aes(x = Status, y = Value), shape = 21, size = 4.8, fill = "#e0a339", color = "#16324f", stroke = 1.1) +
+        geom_text(data = hl, aes(x = Status, y = Value, label = paste0("Patient ", patient_id)), vjust = -1.3, size = 3, color = "#16324f", fontface = "bold")
     }
-    p
+    export_cols <- intersect(c("patient_id", "sample_id", "bin_id", "Status", "Value", "Normal", "shift"), names(df))
+    list(plot = p, data = df[, export_cols])
   })
+  output$clinical_boxplot <- renderPlot({ clinical_boxplot_build()$plot })
+  register_plot_export(output, "clinical_boxplot",
+                       function() clinical_boxplot_build()$plot,
+                       function() clinical_boxplot_build()$data)
   
   output$clinical_table <- renderDT({
     df <- clinical_table_data()
