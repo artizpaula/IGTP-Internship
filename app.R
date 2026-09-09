@@ -963,7 +963,7 @@ ui <- page_sidebar(title = div(style = "display:flex; justify-content:space-betw
                                                        div(class = "home-hero",
                                                            div(class = "home-hero-text",
                                                                tags$div(class = "home-eyebrow", "Research Platform \u00b7 IGTP & UPC"),
-                                                               tags$h1("Mapping the Epigenomic Landscape of Colorectal Cancer"),
+                                                               tags$h1("Integrative Analysis of the Epigenomic Landscape of Colorectal Cancer"),
                                                                tags$p(class = "home-hero-lede",
                                                                       "An interactive platform for exploring genome-wide DNA methylation differences between tumor and matched normal colorectal tissue, and for relating those differences to each patient's mutation status and clinical profile."),
                                                                div(class = "home-hero-actions",
