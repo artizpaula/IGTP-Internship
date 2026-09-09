@@ -11,7 +11,7 @@ library(patchwork) # aligns the annotation strip + heatmap with independent lege
 
 data <- readRDS("data_app.rds") # this file has to be in the same folder as app.R
 
-metadata <- data$metadata
+metadata <- data$metadata 
 bin_table <- data$bin_table
 methylation_long <- data$methylation_long
 chrom_list <- c(as.character(1:22), "X", "Y")
@@ -210,8 +210,9 @@ bin_stats$t_stat <- ifelse(bin_stats$n > 1 & bin_stats$sd_shift > 0, bin_stats$m
 bin_stats$p_value <- ifelse(!is.na(bin_stats$t_stat) & bin_stats$n > 2, 2 * stats::pt(-abs(bin_stats$t_stat), df = pmax(bin_stats$n - 1, 1)), NA_real_)
 bin_stats$q_value <- stats::p.adjust(bin_stats$p_value, method = "BH")
 
-# one row per patient with the clinical fields we can use to annotate the heatmap (Recaiguda/BRAF/KRAS/TP53/MSS/sexe/estadi2 are the same for a patient's Tumor and Normal sample)
-patient_annotation <- unique(metadata[metadata$Type == "Tumor", c("patient_id", "Recaiguda", "BRAF", "KRAS", "TP53", "MSS", "sexe", "estadi2")])
+# one row per patient with the clinical fields we can use to annotate the heatmap (Recaiguda/BRAF/KRAS/TP53/MSS/sexe/estadi2 are the same for a patient's Tumor and Normal sample).
+patient_annotation <- metadata[, c("patient_id", "Recaiguda", "BRAF", "KRAS", "TP53", "MSS", "sexe", "estadi2")]
+patient_annotation <- patient_annotation[!duplicated(patient_annotation$patient_id), ]
 patient_annotation$patient_id <- as.character(patient_annotation$patient_id)
 patient_bin_shift$patient_id <- as.character(patient_bin_shift$patient_id)
 
@@ -403,8 +404,6 @@ build_shift_matrix <- function(df, bin_ids) {
 }
 
 # generic long-to-wide reshape (id, key, value) -> matrix, used for both PCA/UMAP and the network plot
-# (uses tapply instead of stats::reshape(); reshape() scales very poorly once key_col has
-# thousands of distinct values, e.g. all 3110 bins selected at once -- ~25s vs ~0.6s here)
 build_wide_matrix <- function(df, id_col, key_col, value_col) {
   df <- df[is.finite(df[[value_col]]), c(id_col, key_col, value_col)]
   if (nrow(df) == 0) return(NULL)
@@ -449,8 +448,7 @@ hclust_to_segments <- function(hc) {
   merge_x <- numeric(nrow(hc$merge))
   merge_y <- hc$height
   
-  # x/y of either a leaf (negative index into the original items) or an earlier merge (positive
-  # index into merge_x/merge_y)
+  # x/y of either a leaf (negative index into the original items) or an earlier merge
   get_xy <- function(idx) {
     if (idx < 0) list(x = leaf_pos[-idx], y = 0) else list(x = merge_x[idx], y = merge_y[idx])
   }
@@ -587,8 +585,8 @@ parse_genomic_search <- function(query, bin_table, chrom_list, gene_lookup_table
   
   # Exemple 3: gene symbol already annotated on one or more bins
   gene_query <- toupper(q)
-  has_annotation <- !is.na(bin_table$genes) &
-    grepl(paste0("(^|[,;])\\s*", gene_query, "\\s*($|[,;])"), toupper(bin_table$genes))
+  has_annotation <- !is.na(bin_table$gene_names) &
+    grepl(paste0("(^|[,;])\\s*", gene_query, "\\s*($|[,;])"), toupper(bin_table$gene_names))
   in_annotation <- bin_table[has_annotation,]
   if (nrow(in_annotation) >= 1) {
     return(list(status = "ok", chr = in_annotation$chr[1],
@@ -942,7 +940,7 @@ ui <- page_sidebar(title = div(style = "display:flex; justify-content:space-betw
                                                                  "Pick a tab above to start exploring the chromosome, bin, and view-level controls will appear here."))),
                                      conditionalPanel("input.main_nav != 'Home'",
                                                       tags$div("DATA SELECTION", style = "font-size:14px; font-weight:700; letter-spacing:0.8px; color:#7d92a3; margin-bottom:0px;"),
-                                                      selectInput("chr", "Chromosome:", choices = chrom_list), selectizeInput("bins", "Selected bins:", choices = NULL, multiple = TRUE, options = list(placeholder = "Find and select bins (ex: 1_1000000)...", plugins = list("remove_button"))),
+                                                      selectInput("chr", "Chromosome:", choices = chrom_list), selectizeInput("bins", "Selected bins:", choices = NULL, multiple = TRUE, options = list(placeholder = "Find and select bins (ex: 1_1000000)...", plugins = list("remove_button"), maxOptions = length(bin_table$bin_id) + 100)),
                                                       actionButton("add_chr_bins", "Add all bins on the chromosome", icon = bs_icon("plus-circle"), class = "btn-sm class=btn-outline-light w-100"),
                                                       actionButton("clear_bins", "Clear bin selection", icon = bs_icon("x-circle"), class = "btn-sm class=btn-outline-light w-100"),
                                                       fileInput("bins_file", "Or upload bins to select:", accept = c(".csv", ".tsv", ".txt", "text/csv", "text/tab-separated-values", "text/plain"), placeholder = "No file selected", buttonLabel = "Browse..."),
@@ -1115,7 +1113,7 @@ ui <- page_sidebar(title = div(style = "display:flex; justify-content:space-betw
                                                                                                                                                                                                                               div(style = "display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:8px;",
                                                                                                                                                                                                                                   tags$span(style = "font-weight:700; font-size:11.5px; text-transform:uppercase; letter-spacing:0.6px; color:#7d92a3; display:flex; align-items:center; gap:6px;", bs_icon("search"), "Gene"), actionButton("binfilter_gene_clear", "Clear", class = "btn-sm btn-outline-secondary", style = "font-size:11px; padding:2px 10px; border-radius:5px;")),
                                                                                                                                                                                                                               div(style = "background:#f7f9fa; border:1px solid #e7ecef; border-radius:8px; padding:10px 12px;", selectizeInput("binfilter_gene", label = NULL, choices = NULL, selected = character(0), options = list(placeholder = "Search a gene, e.g. TP53...", maxOptions = 200), width = "100%"),
-                                                                                                                                                                                                                                  tags$div(style = "font-size:11px; color:#7d92a3; margin-top:4px;", "Shows every bin whose coordinates overlap this gene (gene_start \u2264 bin_end AND gene_end \u2265 bin_start)."))),
+                                                                                                                                                                                                                                  tags$div(style = "font-size:11px; color:#7d92a3; margin-top:4px;", "Shows every bin annotated with this exact gene symbol (COSMIC Cancer Gene Census annotation)."))),
                                                                                                                                                                                                                           tags$hr(style = "border-top:1px solid #eef2f5; margin:14px 0;"),
                                                                                                                                                                                                                           
                                                                                                                                                                                                                           # Numeric metric filters
@@ -1190,6 +1188,19 @@ server <- function(input, output, session) {
     }
     updated <- union(input$bins, res$matched)
     updateSelectizeInput(session, "bins", choices = bins_choices_for_chr(input$chr, updated), selected = updated, server = TRUE)
+    n_unmatched <- length(res$unmatched)
+    if (n_unmatched == 0) {
+      showNotification(
+        sprintf("All %d bin IDs in the file matched and were added to your selection.", length(res$matched)),
+        type = "message", duration = 7)
+    } else {
+      preview <- paste(utils::head(res$unmatched, 10), collapse = ", ")
+      more <- if (n_unmatched > 10) sprintf(" (+%d more)", n_unmatched - 10) else ""
+      showNotification(
+        sprintf("Selected %d matching bins. %d ID(s) from the file don't exist in this dataset and were skipped: %s%s",
+                length(res$matched), n_unmatched, preview, more),
+        type = "warning", duration = 15)
+    }
   })
   
   selected_bins <- reactive({
@@ -1326,12 +1337,16 @@ server <- function(input, output, session) {
   
   overview_sex_comparison_build <- reactive({
     # Counted at the patient level (via overview_patient_shift), not per bin-row
+    df <- overview_patient_shift()
     validate(need(!is.null(df) && nrow(df) > 0, "No data available for the current selection."))
     
-    sex_labels <- c("Dona" = "Female", "Home" = "Male")
-    df$Sex <- sex_labels[as.character(df$sexe)]
-    df <- df[!is.na(df$Sex) & is.finite(df$shift), ]
-    validate(need(length(unique(df$Sex)) > 0, "No sex information available for the current selection."))
+    # normalize case/whitespace before the lookup so stray formatting in the source data
+    sex_labels <- c("DONA" = "Female", "HOME" = "Male")
+    df$Sex <- sex_labels[toupper(trimws(as.character(df$sexe)))]
+    validate(need(any(!is.na(df$Sex)), "No sex information available for the current selection."))
+    df <- df[!is.na(df$Sex), ]
+    validate(need(any(is.finite(df$shift)), "Methylation shift could not be computed for the current selection (missing Tumor or Normal values)."))
+    df <- df[is.finite(df$shift), ]
     df$Sex <- factor(df$Sex, levels = intersect(c("Female", "Male"), unique(df$Sex)))
     
     n_by_sex <- table(df$Sex)
@@ -1348,8 +1363,7 @@ server <- function(input, output, session) {
       theme_app() +
       theme(legend.position = "none")
     
-    # only annotate a test statistic when both sexes are actually present (skips it cleanly for
-    # single-sex subsets, rather than throwing)
+    # only annotate a test statistic when both sexes are actually present
     if (length(levels(df$Sex)) == 2) {
       test_res <- run_group_test(df$shift[df$Sex == "Female"], df$shift[df$Sex == "Male"], method = "wilcox")
       y_max <- max(df$shift, na.rm = TRUE)
@@ -1483,6 +1497,10 @@ server <- function(input, output, session) {
       nav$start <- 1
       nav$end   <- chrom_lengths[[input$browser_chr]]
     }
+    # keep the sidebar "Chromosome:" selector 
+    if (!identical(input$chr, input$browser_chr)) {
+      updateSelectInput(session, "chr", selected = input$browser_chr)
+    }
   }, ignoreInit = FALSE)
   
   observeEvent(input$prev_chr, {
@@ -1597,6 +1615,8 @@ server <- function(input, output, session) {
             layout(title = list(text = "No bins in this region", font = list(size = 14))) |>
             config(displayModeBar = FALSE, responsive = TRUE))
       }
+      # highlight only bins explicitly picked in the sidebar's "Selected bins" list -- deliberately
+      # NOT selected_bins()'s whole-chromosome fallback, so an empty pick shows no highlighting here
       hl <- df$bin_id %in% input$bins
       base_size <- max(3, min(8, 4000 / nrow(df)))
       hl_size <- base_size + 4
@@ -1629,7 +1649,7 @@ server <- function(input, output, session) {
             layout(title = list(text = "No bins in this region", font = list(size = 14))) |>
             config(displayModeBar = FALSE, responsive = TRUE))
       }
-      # only highlight bins the user actually picked in the sidebar
+      # highlight only bins explicitly picked in the sidebar's "Selected bins" list
       hl <- df$bin_id %in% input$bins
       base_size <- max(4, min(9, 700 / nrow(df)))
       hl_size <- base_size + 5
@@ -1965,7 +1985,6 @@ server <- function(input, output, session) {
     d <- heatmap_build()
     
     # main heatmap uses numeric x/y (rather than discrete scales) so its tile positions line up
-    # exactly, column-for-column and row-for-row, with the dendrogram panels alongside it
     p_main <- ggplot(d$shift_df, aes(x = x, y = y, fill = shift)) +
       geom_tile(color = "white", linewidth = 0.15) +
       scale_fill_gradient2(low = "#3aa9c9", mid = "white", high = "#d1495b", midpoint = 0, limits = c(-d$max_abs, d$max_abs), name = "Methylation\nshift\n(Tumor \u2212 Normal)") +
