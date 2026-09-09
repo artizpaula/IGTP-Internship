@@ -2,6 +2,8 @@
 
 ##### Paula Artiz Dueñas, UPC
 
+##### App Link: https://paulaartiz.shinyapps.io/app_igtp/
+
 ### What This Project Is About
 
 This project is an interactive **R Shiny web app** for exploring and visualizing DNA methylation data in colorectal cancer. It lets users look at genomic "bins" (1 Mb chunks of the genome), compare methylation between tumor and normal samples, filter by region, and explore gene and promoter annotations, all through interactive plots and tables.
