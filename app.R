@@ -210,9 +210,16 @@ bin_stats$t_stat <- ifelse(bin_stats$n > 1 & bin_stats$sd_shift > 0, bin_stats$m
 bin_stats$p_value <- ifelse(!is.na(bin_stats$t_stat) & bin_stats$n > 2, 2 * stats::pt(-abs(bin_stats$t_stat), df = pmax(bin_stats$n - 1, 1)), NA_real_)
 bin_stats$q_value <- stats::p.adjust(bin_stats$p_value, method = "BH")
 
-# one row per patient with the clinical fields we can use to annotate the heatmap (Recaiguda/BRAF/KRAS/TP53/MSS/sexe/estadi2 are the same for a patient's Tumor and Normal sample).
-patient_annotation <- metadata[, c("patient_id", "Recaiguda", "BRAF", "KRAS", "TP53", "MSS", "sexe", "estadi2")]
+# one row per patient with the clinical fields we can use to annotate the heatmap.
+# Recaiguda/MSS/sexe/estadi2 are genuinely the same for a patient's Tumor and Normal sample, but
+# BRAF/KRAS/TP53 are NOT: these are somatic mutation calls, so the Normal-tissue row is always
+# coded 0/unknown and the real mutation status only ever appears on the Tumor row. Sorting by
+# Type so Tumor comes first (falling back to Normal if a patient has no Tumor row) ensures
+# !duplicated() keeps the row that actually carries the mutation status.
+patient_annotation <- metadata[, c("patient_id", "Type", "Recaiguda", "BRAF", "KRAS", "TP53", "MSS", "sexe", "estadi2")]
+patient_annotation <- patient_annotation[order(patient_annotation$patient_id, patient_annotation$Type != "Tumor"), ]
 patient_annotation <- patient_annotation[!duplicated(patient_annotation$patient_id), ]
+patient_annotation$Type <- NULL
 patient_annotation$patient_id <- as.character(patient_annotation$patient_id)
 patient_bin_shift$patient_id <- as.character(patient_bin_shift$patient_id)
 
@@ -290,6 +297,15 @@ if (!"patient_id" %in% patient_level_cols) patient_level_cols <- c("patient_id",
 clinical_profile_table <- unique(metadata[, patient_level_cols, drop = FALSE])
 clinical_profile_table$patient_id <- as.character(clinical_profile_table$patient_id)
 clinical_profile_table <- clinical_profile_table[!duplicated(clinical_profile_table$patient_id), ]
+
+# BRAF/KRAS/TP53/MSS are genuinely patient-level fields, but the per-patient-consistency filter
+# above drops them because the Normal-tissue row is coded differently (0/unknown) from the
+# Tumor-derived status. Re-attach them here using the Tumor-preferred values from patient_annotation.
+missing_clinical_cols <- setdiff(c("BRAF", "KRAS", "TP53", "MSS"), names(clinical_profile_table))
+if (length(missing_clinical_cols) > 0) {
+  clinical_profile_table <- merge(clinical_profile_table, patient_annotation[, c("patient_id", missing_clinical_cols), drop = FALSE],
+                                  by = "patient_id", all.x = TRUE)
+}
 
 # recoding fields in catalan or 0/1 being used
 if ("sexe" %in% names(clinical_profile_table))
@@ -897,6 +913,13 @@ home_css <- "
 }
 "
 
+# Shrinks the whole app uniformly (title, tabs, sidebar, plots, tables...) so it doesn't
+# look oversized when opened directly in a browser tab or embedded in a webpage/iframe.
+# Adjust the percentage below to taste (lower = smaller).
+app_scale_css <- "
+html { zoom: 0.85; }
+"
+
 # Home page helper builders (small functions so the markup below stays readable)
 
 # One stat chip in the hero (e.g. "128 Patients"). `value_ui` can be a plain number/string
@@ -929,7 +952,7 @@ ui <- page_sidebar(title = div(style = "display:flex; justify-content:space-betw
                                    tags$div("Institut Germans Trias i Pujol (IGTP) · Universitat Politècnica de Catalunya (UPC)", style = "font-size:13px; color:#9fb3c8; margin-top:4px;"))),
                    
                    theme = bslib::bs_add_rules(bs_theme(version = 5, base_font = font_google("IBM Plex Sans"), heading_font = font_google("Libre Franklin"),
-                                                        bg = "#f4f7f9", fg = "#0b2436", primary = "#0e7c86", secondary = "#16324f",success  = "#2fae66", info = "#3aa9c9", warning = "#e0a339", danger = "#d1495b", "navbar-bg"  = "#0b2436", base_font_size_scale = 0.98), c(gb_responsive_css, home_css)),
+                                                        bg = "#f4f7f9", fg = "#0b2436", primary = "#0e7c86", secondary = "#16324f",success  = "#2fae66", info = "#3aa9c9", warning = "#e0a339", danger = "#d1495b", "navbar-bg"  = "#0b2436", base_font_size_scale = 0.98), c(gb_responsive_css, home_css, app_scale_css)),
                    
                    sidebar = sidebar(width = 300,
                                      # Landing message shown only on the Home tab, in place of the data filters
