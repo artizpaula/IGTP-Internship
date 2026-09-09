@@ -32,13 +32,13 @@ The app never touches the raw data directly, it just loads one pre-built file, `
 
 | Step | Script | What it does |
 |---|---|---|
-| 1 | `Alus_and_CpGs.R` | Helper functions that read the raw per-CpG methylation tables and count CpGs/Alu elements per 1 Mb bin. You don't run this yourself, it gets `source()`-d automatically by `Week_2_With_Prevalence.R`. |
+| 1 | `Alus_and_CpGs.R` | Helper functions that read the raw per-CpG methylation tables and count CpGs/Alu elements per 1 Mb bin. You don't run this yourself, it gets `source()`-d automatically by `Data_Preprocessing.R`. |
 | 2 | `Gene_Annotation.R` | Helper functions that match bin coordinates against the COSMIC Cancer Gene Census to add gene names/IDs. Also `source()`-d automatically, not run directly. |
 | 3 | `Promoter_Annotation.R` | Helper functions that match bin coordinates against a promoter reference file to add promoter names/counts. Also `source()`-d automatically, not run directly. |
-| 4 | `Week_2_With_Prevalence.R` | **This is the one you actually run.** It loads the metadata, reshapes the per-sample JSON files, sources the three scripts above, computes CpG/Alu counts, gene annotation, and promoter annotation, works out prevalence stats, builds the final bin table, and saves `data_app.rds`. |
+| 4 | `Data_Preprocessing.R` | **This is the one you actually run.** It loads the metadata, reshapes the per-sample JSON files, sources the three scripts above, computes CpG/Alu counts, gene annotation, and promoter annotation, works out prevalence stats, builds the final bin table, and saves `data_app.rds`. |
 | 5 | `app.R` | The Shiny app itself. It just loads `data_app.rds` (from step 4), launch it with `shiny::runApp()`, it's not part of the "pipeline" as such. |
 
-**You only run `Week_2_With_Prevalence.R`. As long as all four `.R` scripts are sitting in the same folder, it takes care of the rest.**
+**You only run `Data_Preprocessing.R`. As long as all four `.R` scripts are sitting in the same folder, it takes care of the rest.**
 
 ---
 
@@ -80,7 +80,7 @@ Project/
 │   ├── Alus_and_CpGs.R
 │   ├── Gene_Annotation.R
 │   ├── Promoter_Annotation.R
-│   ├── Week_2_With_Prevalence.R
+│   ├── Data_Preprocessing.R
 │   └── app.R
 └── Dataset/
     ├── Metadata/
@@ -106,10 +106,10 @@ Running the pipeline will also create a `Data Processed/` folder (next to `Datas
 
 The scripts as provided still have **hardcoded paths from the original author's laptop**. These won't work anywhere else, so you'll need to change them.
 
-#### In `Week_2_With_Prevalence.R`
+#### In `Data_Preprocessing.R`
 
 - **Line 7**: `setwd("/Users/paulaartizduenas/Desktop/Project/R Scripts")`
-  → Change this to wherever `Alus_and_CpGs.R`, `Gene_Annotation.R`, `Promoter_Annotation.R`, and `Week_2_With_Prevalence.R` live on your machine (they all need to be in the same folder, since the `source()` calls near the top find them by relative path).
+  → Change this to wherever `Alus_and_CpGs.R`, `Gene_Annotation.R`, `Promoter_Annotation.R`, and `Data_Preprocessing.R` live on your machine (they all need to be in the same folder, since the `source()` calls near the top find them by relative path).
 
 - **Lines 15–18**: the four dataset root paths (Update **all four** to point to your local copies of the data described above).
   ```r
@@ -131,7 +131,7 @@ The scripts as provided still have **hardcoded paths from the original author's 
   ```
 #### In `Alus_and_CpGs.R`, `Gene_Annotation.R`, and `Promoter_Annotation.R`
 
-- No hardcoded paths here, every function takes a `filepath`/`cosmic_tsv_path`/`promoter_tsv_path` argument as input. Just keep them in the same folder as `Week_2_With_Prevalence.R` so the `source()` calls above can find them.
+- No hardcoded paths here, every function takes a `filepath`/`cosmic_tsv_path`/`promoter_tsv_path` argument as input. Just keep them in the same folder as `Data_Preprocessing.R` so the `source()` calls above can find them.
 
 #### In `app.R`
 
@@ -148,7 +148,7 @@ The scripts as provided still have **hardcoded paths from the original author's 
 - `Alus_and_CpGs.R`: CpG/Alu counting helpers (sourced automatically).
 - `Gene_Annotation.R`: gene annotation helpers (sourced automatically).
 - `Promoter_Annotation.R`: promoter annotation helpers (sourced automatically).
-- `Week_2_With_Prevalence.R`: the pipeline driver, produces `data_app.rds`.
+- `Data_Preprocessing.R`: the pipeline driver, produces `data_app.rds`.
 - `app.R`: the Shiny app.
 
 **You need to supply yourself:**
@@ -164,7 +164,7 @@ The scripts as provided still have **hardcoded paths from the original author's 
 - Several intermediate CSVs along the way: `Metadata_clean.csv`, `Methylation_long.csv`, `CpG_Alu_bin_annotation.csv`, `Gene_bin_overlaps.csv`, `Promoter_bin_overlaps.csv`, `Bin_annotation_template.csv`, `Bin_prevalence_detection.csv`, `Bin_table.csv`.
 
 **R packages you'll need:**
-- Pipeline (`Week_2_With_Prevalence.R` + the scripts it sources): `jsonlite`, `data.table`.
+- Pipeline (`Data_Preprocessing.R` + the scripts it sources): `jsonlite`, `data.table`.
 - App (`app.R`): `shiny`, `bslib`, `bsicons`, `DT`, `plotly`, `ggplot2`, `patchwork`.
 
 ---
@@ -172,11 +172,11 @@ The scripts as provided still have **hardcoded paths from the original author's 
 ### Steps to Run Everything
 
 1. Install the R packages listed above.
-2. Put `Alus_and_CpGs.R`, `Gene_Annotation.R`, `Promoter_Annotation.R`, and `Week_2_With_Prevalence.R` in the same folder.
-3. Edit the paths in `Week_2_With_Prevalence.R` (line 7, and lines 15–18) so they point to your script folder and dataset folders.
+2. Put `Alus_and_CpGs.R`, `Gene_Annotation.R`, `Promoter_Annotation.R`, and `Data_Preprocessing.R` in the same folder.
+3. Edit the paths in `Data_Preprocessing.R` (line 7, and lines 15–18) so they point to your script folder and dataset folders.
 4. Run the pipeline:
    ```r
-   source("Week_2_With_Prevalence.R")
+   source("Data_Preprocessing.R")
    ```
    This creates `data_app.rds` inside a `Data Processed/` folder next to your metadata folder.
 5. Copy (or symlink) `data_app.rds` into the same folder as `app.R` or edit line 12 of `app.R` to point directly to it.
