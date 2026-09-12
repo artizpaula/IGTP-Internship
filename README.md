@@ -2,8 +2,8 @@
 
 ##### Paula Artiz Dueñas, UPC
 
-#####App Link: https://paulaartiz.shinyapps.io/app_igtp/
-#####App Alus Link: https://paulaartiz.shinyapps.io/app_igtp_alu/
+**App Link: https://paulaartiz.shinyapps.io/app_igtp/**
+**App Alus Link: https://paulaartiz.shinyapps.io/app_igtp_alu/**
 
 ### What This Project Is About
 
