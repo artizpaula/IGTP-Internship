@@ -20,6 +20,18 @@ chrom_list <- c(as.character(1:22), "X", "Y")
 bin_table <- bin_table[order(match(bin_table$chr, chrom_list), bin_table$bin_position),]
 bin_choices_by_chr <- split(bin_table$bin_id, factor(bin_table$chr, levels = chrom_list))
 
+# individual Alu elements (fine-resolution companion to bin_table), built by Alu_Table_Preprocessing_alus.R
+data_alus <- readRDS("data_app_alus.rds")
+alu_table <- data_alus$alu_table
+alu_table$tumor_normal_diff <- alu_table$mean_methylation_tumor - alu_table$mean_methylation_normal
+
+# order the alus so the "Selected Alus" dropdown makes sense (by chromosome then position)
+alu_table <- alu_table[order(match(alu_table$chr, chrom_list), alu_table$alu_start),]
+alu_choices_by_chr <- split(alu_table$alu_id, factor(alu_table$chr, levels = chrom_list))
+
+# whether any alu actually ended up with promoter annotation (inherited from its parent bin, see Alu_Table_Preprocessing_alus.R)
+alu_promoter_annotation_available <- "promoter_count" %in% names(alu_table) && any(alu_table$promoter_count > 0, na.rm = TRUE)
+
 # Bin Table tab (extra things needed)
 
 # turn a start/end pair into something like "1 MB-2 MB" so it's readable
@@ -77,6 +89,44 @@ bin_table_header_sketch <- local({
     tr(lapply(bin_table_columns, function(c) th(style = "white-space:nowrap;", c$label))))))
 })
 
+# alu_coordinates ("start\u2013end") is precomputed in Alu_Table_Preprocessing_alus.R
+alu_table_columns <- list(list(id = "alu_id", label = "Alu ID", group = "Alu"),
+                          list(id = "alu_coordinates", label = "Coordinates", group = "Alu"),
+                          list(id = "bin_id", label = "Parent Bin", group = "Alu"),
+                          list(id = "mean_methylation_tumor", label = "Tumor Mean", group = "Methylation Values", digits = 3),
+                          list(id = "mean_methylation_normal",label = "Normal Mean", group = "Methylation Values", digits = 3),
+                          list(id = "sd_methylation_tumor",label = "Tumor SD", group = "Methylation Values", digits = 3),
+                          list(id = "sd_methylation_normal",label = "Normal SD", group = "Methylation Values", digits = 3),
+                          list(id = "tumor_normal_diff", label = "\u0394 (Tumor \u2212 Normal)", group = "Methylation Values", digits = 3),
+                          list(id = "promoter_count", label = "Promoter Count", group = "Promoter Annotation"),
+                          list(id = "prevalence_total", label = "Prevalence (all samples)", group = "Detection", digits = 2),
+                          list(id = "quick_links_html", label = "Quick Links", group = "Explore", html = TRUE, plain_id = "quick_links_text"))
+
+# two-row header for the Alu Table DT, same trick as bin_table_header_sketch
+alu_table_header_sketch <- local({
+  col_groups <- vapply(alu_table_columns, function(c) c$group, character(1))
+  group_rle  <- rle(col_groups)
+  htmltools::withTags(table(
+    class = "display",
+    thead(tr(lapply(seq_along(group_rle$lengths), function(i) {
+      th(colspan = group_rle$lengths[i],
+         style = "text-align:center; background:#eef2f5; color:#16324f; border-bottom:2px solid #d8e0e6; font-size:11.5px; text-transform:uppercase; letter-spacing:0.4px;",
+         group_rle$values[i])
+    })),
+    tr(lapply(alu_table_columns, function(c) th(style = "white-space:nowrap;", c$label))))))
+})
+
+# numeric metrics exposed as filters in the Alu Table tab (mirrors bin_table_filters)
+alu_table_filters <- list(list(id = "mean_methylation_tumor", label = "Mean Meth (Tumor)", op = ">=", step = 0.01),
+                          list(id = "mean_methylation_normal", label = "Mean Meth (Normal)", op = ">=", step = 0.01),
+                          list(id = "sd_methylation_tumor", label = "SD Meth (Tumor)", op = ">=", step = 0.01),
+                          list(id = "sd_methylation_normal",label = "SD Meth (Normal)", op = ">=", step = 0.01),
+                          list(id = "tumor_normal_diff", label = "Mean Difference", op = ">=", step = 0.01),
+                          list(id = "prevalence_tumor", label = "Prevalence (Tumor)", op = ">=", step = 0.01),
+                          list(id = "prevalence_normal", label = "Prevalence (Normal)", op = ">=", step = 0.01),
+                          list(id = "prevalence_total", label = "Prevalence (all samples)", op = ">=", step = 0.01),
+                          list(id = "promoter_count", label = "Promoter Count", op = ">=", step = 1))
+
 # numeric metrics we expose as filters
 bin_table_filters <- list(list(id = "mean_methylation_tumor", label = "Mean Meth (Tumor)", op = ">=", step = 0.01),
                           list(id = "mean_methylation_normal", label = "Mean Meth (Normal)", op = ">=", step = 0.01),
@@ -91,7 +141,7 @@ bin_table_filters <- list(list(id = "mean_methylation_tumor", label = "Mean Meth
                           list(id = "promoter_count", label = "Promoter Count", op = ">=", step = 1))
 
 # makes one slider per filter, using min/max from the actual data so the range makes sense
-build_bin_table_filter_inputs <- function(filters, df) {
+build_bin_table_filter_inputs <- function(filters, df, prefix = "binfilter_") {
   lapply(filters, function(f) {
     vals <- df[[f$id]]
     vals <- vals[is.finite(vals)]
@@ -106,21 +156,22 @@ build_bin_table_filter_inputs <- function(filters, df) {
     if (hi <= lo) hi <- lo + step
     
     div(style = "flex: 1 1 200px; min-width: 180px; max-width: 250px;",
-        sliderInput(inputId = paste0("binfilter_", f$id),
+        sliderInput(inputId = paste0(prefix, f$id),
                     label = paste0(f$label, " ", f$op),
                     min = lo, max = hi, value = lo, step = step,
                     width = "100%"))})
 }
 
-# applies all the configured filters to a bin_table subset
-apply_bin_table_filters <- function(df, filters, input) {
+# applies all the configured filters to a bin_table (or alu_table) subset
+apply_bin_table_filters <- function(df, filters, input, prefix = "binfilter_",
+                                    chr_input_id = "binfilter_chr", gene_input_id = "binfilter_gene") {
   # chromosome filter
-  chr_selected <- input[["binfilter_chr"]]
+  chr_selected <- input[[chr_input_id]]
   if (!is.null(chr_selected)) {
     df <- df[as.character(df$chr) %in% chr_selected, , drop = FALSE]}
   
   for (f in filters) {
-    threshold <- input[[paste0("binfilter_", f$id)]]
+    threshold <- input[[paste0(prefix, f$id)]]
     if (is.null(threshold)) next
     col <- df[[f$id]]
     if (is.null(col) || all(is.na(col))) next
@@ -130,8 +181,8 @@ apply_bin_table_filters <- function(df, filters, input) {
                    rep(TRUE, nrow(df)))
     df <- df[keep, , drop = FALSE]}
   
-  # gene search: exact match
-  gene_query <- input[["binfilter_gene"]]
+  # gene search: exact match (skipped entirely when gene_input_id is NULL
+  gene_query <- if (!is.null(gene_input_id)) input[[gene_input_id]] else NULL
   if (!is.null(gene_query) && nzchar(trimws(gene_query)) && "gene_names" %in% names(df)) {
     pattern <- paste0("(^|;)\\s*", toupper(trimws(gene_query)), "\\s*($|;)")
     keep <- !is.na(df$gene_names) & grepl(pattern, toupper(df$gene_names))
@@ -211,11 +262,6 @@ bin_stats$p_value <- ifelse(!is.na(bin_stats$t_stat) & bin_stats$n > 2, 2 * stat
 bin_stats$q_value <- stats::p.adjust(bin_stats$p_value, method = "BH")
 
 # one row per patient with the clinical fields we can use to annotate the heatmap.
-# Recaiguda/MSS/sexe/estadi2 are genuinely the same for a patient's Tumor and Normal sample, but
-# BRAF/KRAS/TP53 are NOT: these are somatic mutation calls, so the Normal-tissue row is always
-# coded 0/unknown and the real mutation status only ever appears on the Tumor row. Sorting by
-# Type so Tumor comes first (falling back to Normal if a patient has no Tumor row) ensures
-# !duplicated() keeps the row that actually carries the mutation status.
 patient_annotation <- metadata[, c("patient_id", "Type", "Recaiguda", "BRAF", "KRAS", "TP53", "MSS", "sexe", "estadi2")]
 patient_annotation <- patient_annotation[order(patient_annotation$patient_id, patient_annotation$Type != "Tumor"), ]
 patient_annotation <- patient_annotation[!duplicated(patient_annotation$patient_id), ]
@@ -298,9 +344,7 @@ clinical_profile_table <- unique(metadata[, patient_level_cols, drop = FALSE])
 clinical_profile_table$patient_id <- as.character(clinical_profile_table$patient_id)
 clinical_profile_table <- clinical_profile_table[!duplicated(clinical_profile_table$patient_id), ]
 
-# BRAF/KRAS/TP53/MSS are genuinely patient-level fields, but the per-patient-consistency filter
-# above drops them because the Normal-tissue row is coded differently (0/unknown) from the
-# Tumor-derived status. Re-attach them here using the Tumor-preferred values from patient_annotation.
+# BRAF/KRAS/TP53/MSS are genuinely patient-level fields
 missing_clinical_cols <- setdiff(c("BRAF", "KRAS", "TP53", "MSS"), names(clinical_profile_table))
 if (length(missing_clinical_cols) > 0) {
   clinical_profile_table <- merge(clinical_profile_table, patient_annotation[, c("patient_id", missing_clinical_cols), drop = FALSE],
@@ -348,8 +392,7 @@ clinical_label_for <- function(col_id) {
   tools::toTitleCase(gsub("_", " ", col_id))
 }
 
-# Clinical Explorer filter panel: only the headline demographic/clinical fields the user asked for
-# (sex, age, stage, relapse) get a filter control, even though the table itself still shows every column
+# Clinical Explorer filter panel: only the headline demographic/clinical fields
 clinical_numeric_cols <- intersect("edat_IQ", names(clinical_profile_table))
 clinical_categorical_cols <- intersect(c("sexe", "estadi2", "Recaiguda"), names(clinical_profile_table))
 
@@ -679,6 +722,59 @@ parse_bin_file <- function(filepath, filename, bin_table, chrom_list) {
   list(matched = matched, unmatched = unmatched, n_entries = n_entries)
 }
 
+# same idea as parse_bin_file
+parse_alu_file <- function(filepath, filename, alu_table, chrom_list) {
+  ext <- tolower(tools::file_ext(filename))
+  raw_ids <- character(0)
+  tbl <- NULL
+  
+  if (ext %in% c("csv", "tsv")) {
+    sep <- if (ext == "tsv") "\t" else ","
+    tbl <- tryCatch(
+      utils::read.csv(filepath, sep = sep, header = TRUE, stringsAsFactors = FALSE, check.names = FALSE),
+      error = function(e) NULL)
+  }
+  
+  if (!is.null(tbl) && ncol(tbl) >= 1 && nrow(tbl) >= 1) {
+    nm <- tolower(trimws(names(tbl)))
+    id_col  <- which(nm %in% c("alu_id", "alu", "id"))
+    chr_col <- which(nm %in% c("chr", "chromosome", "chrom"))
+    start_col <- which(nm %in% c("alu_start", "start", "pos", "position"))
+    end_col   <- which(nm %in% c("alu_end", "end"))
+    if (length(id_col) >= 1) {
+      raw_ids <- as.character(tbl[[id_col[1]]])
+    } else if (length(chr_col) >= 1 && length(start_col) >= 1 && length(end_col) >= 1) {
+      raw_ids <- paste0(tbl[[chr_col[1]]], ":", tbl[[start_col[1]]], "-", tbl[[end_col[1]]])
+    } else if (ncol(tbl) == 1) {
+      raw_ids <- c(names(tbl)[1], as.character(tbl[[1]]))
+    } else {
+      raw_ids <- as.character(unlist(tbl))
+    }
+  }
+  
+  if (length(raw_ids) == 0) {
+    txt <- tryCatch(readLines(filepath, warn = FALSE), error = function(e) character(0))
+    txt <- paste(txt, collapse = "\n")
+    raw_ids <- strsplit(txt, "[,;\\s]+", perl = TRUE)[[1]]
+  }
+  
+  raw_ids <- trimws(raw_ids)
+  raw_ids <- raw_ids[nzchar(raw_ids)]
+  n_entries <- length(unique(raw_ids))
+  
+  # normalize formatting differences
+  norm <- toupper(raw_ids)
+  norm <- sub("^CHR", "", norm)
+  norm <- sub("^([0-9XYxy]+)[:_]", "\\1:", norm)         # chr/start separator -> ":"
+  norm <- sub("^([0-9XY]+:[0-9]+)[_-]([0-9]+)$", "\\1-\\2", norm) # start/end separator -> "-"
+  norm <- unique(norm)
+  alu_lookup <- toupper(alu_table$alu_id)
+  hit <- match(norm, alu_lookup)
+  matched <- unique(alu_table$alu_id[hit[!is.na(hit)]])
+  unmatched <- norm[is.na(hit)]
+  list(matched = matched, unmatched = unmatched, n_entries = n_entries)
+}
+
 # zooms in and out on the genome browser
 zoom_view <- function(start, end, chr_len, factor, min_width = 2e6) {
   width <- end - start
@@ -754,6 +850,74 @@ bin_table$quick_links_text <- mapply(
   bin_table$chr, bin_table$bin_start, bin_table$bin_end, bin_table$gene_names,
   SIMPLIFY = TRUE
 )
+
+# Per-Alu "Quick Links": same external links as the bin table.
+build_alu_quick_links_vectorized <- function(alu_id, chr, start, end, gene, chunk_size = 150000) {
+  esc_amp <- function(x) gsub("&", "&amp;", x, fixed = TRUE)
+  icon_bullseye <- as.character(bs_icon("bullseye", size = "0.8em"))
+  icon_arrow    <- as.character(bs_icon("box-arrow-up-right", size = "0.8em"))
+  tcga_url      <- "https://portal.gdc.cancer.gov/exploration?filters=%7B%22op%22%3A%22in%22%2C%22content%22%3A%7B%22field%22%3A%22cases.project.project_id%22%2C%22value%22%3A%5B%22TCGA-COAD%22%2C%22TCGA-READ%22%5D%7D%7D"
+  tcga_url_esc  <- esc_amp(tcga_url)
+  
+  n <- length(alu_id)
+  html <- character(n)
+  text <- character(n)
+  
+  for (s in seq(1, n, by = chunk_size)) {
+    e <- min(s + chunk_size - 1, n)
+    idx <- s:e
+    
+    start_fmt   <- format(start[idx], scientific = FALSE, trim = TRUE)
+    end_fmt     <- format(end[idx],   scientific = FALSE, trim = TRUE)
+    ucsc_url    <- paste0("https://genome.ucsc.edu/cgi-bin/hgTracks?db=hg19&position=chr", chr[idx], "%3A", start_fmt, "-", end_fmt)
+    ensembl_url <- paste0("https://grch37.ensembl.org/Homo_sapiens/Location/View?r=", chr[idx], "%3A", start_fmt, "-", end_fmt)
+    
+    # first gene symbol (mirrors build_external_links()'s strsplit(gene, "[,;]")[[1]][1])
+    gene_chr   <- ifelse(is.na(gene[idx]), "", gene[idx])
+    first_gene <- trimws(sub("^([^,;]*).*$", "\\1", gene_chr))
+    has_gene   <- nzchar(first_gene)
+    # URLencode() isn't vectorized; only run it on the handful of *unique* gene symbols
+    uniq_genes     <- unique(first_gene[has_gene])
+    encoded_lookup <- vapply(uniq_genes, utils::URLencode, character(1), USE.NAMES = TRUE)
+    gene_url <- character(length(idx))
+    gene_url[has_gene] <- paste0("https://www.ncbi.nlm.nih.gov/gene/?term=", encoded_lookup[first_gene[has_gene]], "%5Bsym%5D+AND+human%5Borgn%5D")
+    
+    browser_onclick <- sprintf(
+      "Shiny.setInputValue('jump_to_alu', {id: '%s', nonce: Math.random()}, {priority: 'event'}); return false;",
+      gsub("'", "", alu_id[idx], fixed = TRUE))
+    
+    html_base <- sprintf(
+      paste0('<a href="#" onclick="%s" style="margin-right:10px; font-size:12px; font-weight:600; color:#16324f; text-decoration:none; white-space:nowrap;">%s Genome Browser</a>',
+             '<a href="%s" target="_blank" rel="noopener noreferrer" style="margin-right:10px; font-size:12px; color:#2b6cb0; text-decoration:none; white-space:nowrap;">%s UCSC</a>',
+             '<a href="%s" target="_blank" rel="noopener noreferrer" style="margin-right:10px; font-size:12px; color:#0e7c86; text-decoration:none; white-space:nowrap;">%s Ensembl</a>',
+             '<a href="%s" target="_blank" rel="noopener noreferrer" style="margin-right:10px; font-size:12px; color:#d1495b; text-decoration:none; white-space:nowrap;">%s TCGA</a>'),
+      browser_onclick, icon_bullseye, esc_amp(ucsc_url), icon_arrow, esc_amp(ensembl_url), icon_arrow, tcga_url_esc, icon_arrow)
+    
+    a_gene <- character(length(idx))
+    a_gene[has_gene] <- sprintf(
+      '<a href="%s" target="_blank" rel="noopener noreferrer" style="font-size:12px; color:#8a5a00; text-decoration:none; white-space:nowrap;">%s NCBI Gene</a>',
+      esc_amp(gene_url[has_gene]), icon_arrow)
+    
+    html[idx] <- paste0(html_base, a_gene)
+    
+    text_chunk <- paste0("UCSC: ", ucsc_url, " | Ensembl: ", ensembl_url, " | TCGA: ", tcga_url)
+    text_chunk[has_gene] <- paste0(text_chunk[has_gene], " | NCBI Gene: ", gene_url[has_gene])
+    text[idx] <- text_chunk
+    
+    rm(start_fmt, end_fmt, ucsc_url, ensembl_url, gene_chr, first_gene, has_gene,
+       uniq_genes, encoded_lookup, gene_url, browser_onclick, html_base, a_gene, text_chunk)
+    gc(FALSE)
+  }
+  
+  list(html = html, text = text)
+}
+
+attach_alu_quick_links <- function(df) {
+  links <- build_alu_quick_links_vectorized(df$alu_id, df$chr, df$alu_start, df$alu_end, df$gene_names)
+  df$quick_links_html <- links$html
+  df$quick_links_text <- links$text
+  df
+}
 
 # Plot description function
 plot_desc <- function(...) {
@@ -913,9 +1077,7 @@ home_css <- "
 }
 "
 
-# Shrinks the whole app uniformly (title, tabs, sidebar, plots, tables...) so it doesn't
-# look oversized when opened directly in a browser tab or embedded in a webpage/iframe.
-# Adjust the percentage below to taste (lower = smaller).
+# Shrinks the whole app uniformly (title, tabs, sidebar, plots, tables...)
 app_scale_css <- "
 html { zoom: 0.85; }
 "
@@ -951,7 +1113,7 @@ ui <- page_sidebar(title = div(style = "display:flex; justify-content:space-betw
                                div(h2("Exploration of Epigenomic Data in Colorectal Cancer",style = "margin:0; font-weight:600; font-size:28px; line-height:1.2;"),
                                    tags$div("Institut Germans Trias i Pujol (IGTP) · Universitat Politècnica de Catalunya (UPC)", style = "font-size:13px; color:#9fb3c8; margin-top:4px;"))),
                    
-                   theme = bslib::bs_add_rules(bs_theme(version = 5, base_font = font_google("IBM Plex Sans"), heading_font = font_google("Libre Franklin"),
+                   theme = bslib::bs_add_rules(bs_theme(version = 5, base_font = font_google("IBM Plex Sans", local = FALSE), heading_font = font_google("Libre Franklin", local = FALSE),
                                                         bg = "#f4f7f9", fg = "#0b2436", primary = "#0e7c86", secondary = "#16324f",success  = "#2fae66", info = "#3aa9c9", warning = "#e0a339", danger = "#d1495b", "navbar-bg"  = "#0b2436", base_font_size_scale = 0.98), c(gb_responsive_css, home_css, app_scale_css)),
                    
                    sidebar = sidebar(width = 300,
@@ -964,10 +1126,20 @@ ui <- page_sidebar(title = div(style = "display:flex; justify-content:space-betw
                                      conditionalPanel("input.main_nav != 'Home'",
                                                       tags$div("DATA SELECTION", style = "font-size:14px; font-weight:700; letter-spacing:0.8px; color:#7d92a3; margin-bottom:0px;"),
                                                       selectInput("chr", "Chromosome:", choices = chrom_list), selectizeInput("bins", "Selected bins:", choices = NULL, multiple = TRUE, options = list(placeholder = "Find and select bins (ex: 1_1000000)...", plugins = list("remove_button"), maxOptions = length(bin_table$bin_id) + 100)),
-                                                      actionButton("add_chr_bins", "Add all bins on the chromosome", icon = bs_icon("plus-circle"), class = "btn-sm class=btn-outline-light w-100"),
-                                                      actionButton("clear_bins", "Clear bin selection", icon = bs_icon("x-circle"), class = "btn-sm class=btn-outline-light w-100"),
+                                                      actionButton("add_chr_bins", label = tagList(bs_icon("plus-circle"), "Add all bins on the chromosome"), class = "btn-sm btn-light w-100"),
+                                                      actionButton("clear_bins", label = tagList(bs_icon("x-circle"), "Clear bin selection"), class = "btn-sm btn-light w-100"),
                                                       fileInput("bins_file", "Or upload bins to select:", accept = c(".csv", ".tsv", ".txt", "text/csv", "text/tab-separated-values", "text/plain"), placeholder = "No file selected", buttonLabel = "Browse..."),
                                                       tags$div("Accepts .csv/.tsv/.txt or a plain list of bin IDs like 1_1000000, one per line or comma-separated).", style = "font-size:11px; color:#7d92a3; margin-top:-10px; margin-bottom:8px;"),
+                                                      hr(style = "margin:1px 0; border-color:#3a5470;"),
+                                                      tags$div("ALU SELECTION", style = "font-size:14px; font-weight:700; letter-spacing:0.8px; color:#7d92a3; margin-bottom:0px;"),
+                                                      tags$div("Same idea as above, but for individual Alu elements (uses the chromosome picked above). Feeds the \u201cAlu Table\u201d tab and lights up on the Genome Browser track below.",
+                                                               style = "font-size:11px; color:#7d92a3; margin-top:-2px; margin-bottom:6px;"),
+                                                      selectizeInput("alus", "Selected Alus:", choices = NULL, multiple = TRUE, options = list(placeholder = "Find and select Alus (ex: 1:51584-51880)...", plugins = list("remove_button"), maxOptions = 200)),
+                                                      actionButton("add_chr_alus", label = tagList(bs_icon("plus-circle"), "Add all Alus on the chromosome"), class = "btn-sm btn-light w-100"),
+                                                      actionButton("clear_alus", label = tagList(bs_icon("x-circle"), "Clear Alu selection"), class = "btn-sm btn-light w-100"),
+                                                      actionButton("view_alus_browser", label = tagList(bs_icon("binoculars"), "View selected Alus in Genome Browser"), class = "btn-sm btn-primary w-100", style = "margin-top:4px;"),
+                                                      fileInput("alus_file", "Or upload Alus to select:", accept = c(".csv", ".tsv", ".txt", "text/csv", "text/tab-separated-values", "text/plain"), placeholder = "No file selected", buttonLabel = "Browse..."),
+                                                      tags$div("Accepts .csv/.tsv/.txt or a plain list of Alu IDs like 1:51584-51880, one per line or comma-separated.", style = "font-size:11px; color:#7d92a3; margin-top:-10px; margin-bottom:8px;"),
                                                       hr(style = "margin:1px 0; border-color:#3a5470;"),
                                                       tags$div("VISUALIZATION LEVEL", style = "font-size:14px; font-weight:700; letter-spacing:0.8px; color:#7d92a3; margin-bottom:0px;"),
                                                       radioButtons("view_level", NULL,
@@ -1000,14 +1172,15 @@ ui <- page_sidebar(title = div(style = "display:flex; justify-content:space-betw
                                                                home_stat(textOutput("n_patients", inline = TRUE), "Patients"),
                                                                home_stat(textOutput("n_samples", inline = TRUE), "Samples (Tumor + Normal)"),
                                                                home_stat(format(nrow(bin_table), big.mark = ","), "Genomic Bins (1 Mb)"),
+                                                               home_stat(format(nrow(alu_table), big.mark = ","), "Individual Alu Elements"),
                                                                home_stat(length(chrom_list), "Chromosomes Covered"))),
                                                        
-                                                       # Objective + Data sources ----
+                                                       # Objective + Data sources
                                                        div(class = "home-section home-grid-2",
                                                            div(class = "home-card",
                                                                h3("Project Objective"),
                                                                p("This platform was built to make genome-wide DNA methylation differences between colorectal tumor and matched normal tissue easy to explore, without writing code. The genome is split into 1\u00a0Mb bins, and methylation is compared bin-by-bin between tumor and normal samples across every chromosome."),
-                                                               p("Beyond the tumor/normal contrast, the platform lets you relate methylation shifts to each patient's clinical and mutation profile, sex, stage, MSI/MSS status, and BRAF/KRAS/TP53 mutation status \u2014 and to overlay genomic context such as CpG islands, Alu repeats, and COSMIC cancer-gene annotation, in order to help surface candidate regions for further study.")),
+                                                               p("Beyond the tumor/normal contrast, the platform lets you relate methylation shifts to each patient's clinical and mutation profile, sex, stage, MSI/MSS status, and BRAF/KRAS/TP53 mutation status and to overlay genomic context such as CpG islands, Alu repeats, and COSMIC cancer-gene annotation, in order to help surface candidate regions for further study.")),
                                                            div(class = "home-card",
                                                                h3("Data Sources"),
                                                                tags$ul(class = "home-source-list",
@@ -1028,7 +1201,8 @@ ui <- page_sidebar(title = div(style = "display:flex; justify-content:space-betw
                                                                home_func_card("Feature \u00d7 Chromosome Heatmap", "Cluster patients and bins by methylation shift, and overlay a clinical feature as a colour strip.", "Feature \u00d7 Chromosome Heatmap"),
                                                                home_func_card("Overview", "A summary dashboard of the Tumor vs Normal shift, split by mutation status, stage/MSI, and sex.", "Overview"),
                                                                home_func_card("Clinical Explorer", "Cross-reference methylation with each patient's full clinical and mutation profile, filterable by subgroup.", "Clinical Explorer"),
-                                                               home_func_card("Bin Table", "The full annotated bin-level table \u2014 methylation stats, CpG/Alu content, COSMIC genes and promoters \u2014 exportable to CSV.", "Bin Table"),
+                                                               home_func_card("Bin Table", "The full annotated bin-level table, methylation stats, CpG/Alu content, COSMIC genes and promoters, exportable to CSV.", "Bin Table"),
+                                                               home_func_card("Alu Table", "The same idea, one row per individual Alu element instead of per 1\u00a0Mb bin \u2014 select specific Alus from the sidebar or filter/search the full table.", "Alu Table"),
                                                                home_func_card("Tumor vs. Normal", "Density plots, PCA/UMAP projections, and a patient similarity network reveal global Tumor/Normal separation.", "Tumor vs. Normal"))),
                                                        
                                                        div(class = "home-footer",
@@ -1047,19 +1221,21 @@ ui <- page_sidebar(title = div(style = "display:flex; justify-content:space-betw
                                                         div(class = "gb-toolbar",
                                                             div(class = "gb-toolbar-group gb-search-group",
                                                                 textInput("browser_search", label = NULL, placeholder = "e.g. 12:25000000-26000000, 12_25000000, or KRAS", width = "100%"),
-                                                                actionButton("browser_search_go", NULL, icon = bs_icon("search"), class = "btn-sm btn-outline-secondary")),
+                                                                actionButton("browser_search_go", label = bs_icon("search"), class = "btn-sm btn-outline-secondary")),
                                                             div(class = "gb-toolbar-group gb-nav-group",
-                                                                actionButton("prev_chr", NULL, icon = bs_icon("chevron-left"), class = "btn-sm btn-outline-secondary"),
+                                                                actionButton("prev_chr", label = bs_icon("chevron-left"), class = "btn-sm btn-outline-secondary"),
                                                                 selectInput("browser_chr", NULL, choices = chrom_list, selected = "1", width = "90px"),
-                                                                actionButton("next_chr", NULL, icon = bs_icon("chevron-right"), class = "btn-sm btn-outline-secondary")),
+                                                                actionButton("next_chr", label = bs_icon("chevron-right"), class = "btn-sm btn-outline-secondary")),
                                                             div(class = "gb-toolbar-group gb-zoom-group",
-                                                                actionButton("zoom_in", NULL, icon = bs_icon("zoom-in"), class = "btn-sm btn-outline-secondary"),
-                                                                actionButton("zoom_out", NULL, icon = bs_icon("zoom-out"), class = "btn-sm btn-outline-secondary"),
-                                                                actionButton("zoom_reset", "Whole chromosome", icon = bs_icon("arrow-counterclockwise"), class = "btn-sm btn-outline-secondary"))),
+                                                                actionButton("zoom_in", label = bs_icon("zoom-in"), class = "btn-sm btn-outline-secondary"),
+                                                                actionButton("zoom_out", label = bs_icon("zoom-out"), class = "btn-sm btn-outline-secondary"),
+                                                                actionButton("zoom_reset", label = tagList(bs_icon("arrow-counterclockwise"), "Whole chromosome"), class = "btn-sm btn-outline-secondary")),
+                                                            div(class = "gb-toolbar-group gb-alu-track-group",
+                                                                checkboxInput("browser_show_alus", "Show Alus track", value = TRUE))),
                                                         div(class = "gb-plot-wrap", plotlyOutput("browser_chr_plot", height = "calc(max(440px, min(72vh, 760px)))", width = "100%")),
                                                         plotly_export_ui("browser_chr_plot"),
-                                                        plot_desc("Tumor vs Normal methylation line-by-line across one chromosome."),
-                                                        tags$div("Tip: bins currently in your sidebar selection are outlined on the plot above. Drag on the plot to zoom in, double-click to reset, or use the range slider below the plot to pan across the chromosome. Use the expand icon in the card header to view the plot full-screen.",
+                                                        plot_desc("Tumor vs Normal methylation line-by-line across one chromosome. The row of ticks at the bottom marks individual Alu elements in view; Alus currently chosen in the sidebar's \u201cSelected Alus\u201d list are highlighted in orange."),
+                                                        tags$div("Tip: bins currently in your sidebar selection are outlined on the plot above, and Alus in your sidebar Alu selection are highlighted on the Alu track below it. Drag on the plot to zoom in, double-click to reset, or use the range slider below the plot to pan across the chromosome. Use the expand icon in the card header to view the plot full-screen. Click \u201cGenome Browser\u201d next to any row in the Alu Table to jump straight to it.",
                                                                  style = "font-size:11px; color:#7d92a3; margin-top:6px;")),
                                                    card(card_header("External Resources for This Region"), uiOutput("browser_external_links"))),
                                          
@@ -1078,8 +1254,8 @@ ui <- page_sidebar(title = div(style = "display:flex; justify-content:space-betw
                                                                                             div(style = "flex:1 1 220px; max-width:340px;", selectInput("heatmap_feature", "Select Feature:", choices = heatmap_feature_choices, selected = "none")),
                                                                                             div(style = "flex:1 1 220px; min-width:220px; max-width:300px;", sliderInput("heatmap_zoom", "Zoom:", min = 10, max = 400, value = 100, step = 5, post = "%", width = "100%")),
                                                                                             div(style = "display:flex; align-items:center; gap:8px; padding-left:20px; padding-bottom:2px; border-left:1px solid #e3e8ec;",
-                                                                                                actionButton("heatmap_zoom_fit", "Fit to screen", icon = bs_icon("aspect-ratio"), class = "btn-sm btn-outline-secondary"),
-                                                                                                actionButton("heatmap_zoom_reset", "Reset (100%)", icon = bs_icon("arrow-counterclockwise"), class = "btn-sm btn-outline-secondary"))),
+                                                                                                actionButton("heatmap_zoom_fit", label = tagList(bs_icon("aspect-ratio"), "Fit to screen"), class = "btn-sm btn-outline-secondary"),
+                                                                                                actionButton("heatmap_zoom_reset", label = tagList(bs_icon("arrow-counterclockwise"), "Reset (100%)"), class = "btn-sm btn-outline-secondary"))),
                                                                                         tags$div(id = "heatmap_scroll_container", style = "overflow:auto; width:100%; height:92vh; border:1px solid #e3e8ec; border-radius:8px; background:#ffffff;",
                                                                                                  plotOutput("feature_heatmap")),
                                                                                         plot_export_ui("feature_heatmap"),
@@ -1110,7 +1286,7 @@ ui <- page_sidebar(title = div(style = "display:flex; justify-content:space-betw
                                                                                                                 tags$span(style = "font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#7d92a3; display:flex; align-items:center; gap:4px;", bs_icon("sliders", size = "0.9em"), "Filter:"),
                                                                                                                 build_clinical_categorical_filter_inputs(clinical_categorical_cols, clinical_profile_table, compact = TRUE),
                                                                                                                 build_clinical_numeric_filter_inputs(clinical_numeric_cols, clinical_profile_table, compact = TRUE),
-                                                                                                                actionButton("clinfilter_reset", "Reset", icon = bs_icon("arrow-counterclockwise"), class = "btn-sm btn-outline-danger", style = "font-size:11px; padding:3px 10px; border-radius:5px; margin-left:auto;")),
+                                                                                                                actionButton("clinfilter_reset", label = tagList(bs_icon("arrow-counterclockwise"), "Reset"), class = "btn-sm btn-outline-danger", style = "font-size:11px; padding:3px 10px; border-radius:5px; margin-left:auto;")),
                                                                                                             div(style = "font-size:12px; color:#7d92a3; margin-bottom:8px;", "One row per patient. Use the column filters below the headers to narrow results, click any column header to sort, and click a row to select that patient."),
                                                                                                             DTOutput("clinical_table"), plot_desc("A searchable table of patient info, click a row to highlight them.")))),
                                          
@@ -1144,11 +1320,38 @@ ui <- page_sidebar(title = div(style = "display:flex; justify-content:space-betw
                                                                                                                                                                                                                           div(style = "display:flex; flex-wrap:wrap; gap:16px; align-items:flex-start;",
                                                                                                                                                                                                                               build_bin_table_filter_inputs(bin_table_filters, bin_table)),
                                                                                                                                                                                                                           tags$hr(style = "border-top:1px solid #eef2f5; margin:18px 0 14px 0;"),
-                                                                                                                                                                                                                          div(style = "display:flex; justify-content:flex-end;", actionButton("binfilter_reset", "Reset all filters", icon = bs_icon("arrow-counterclockwise"), class = "btn-sm btn-outline-danger", style = "font-size:12px; border-radius:6px; padding:5px 14px;"))) ),
+                                                                                                                                                                                                                          div(style = "display:flex; justify-content:flex-end;", actionButton("binfilter_reset", label = tagList(bs_icon("arrow-counterclockwise"), "Reset all filters"), class = "btn-sm btn-outline-danger", style = "font-size:12px; border-radius:6px; padding:5px 14px;"))) ),
                                                                      div(style = "display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:15px;", downloadButton( "bintable_download", "Download CSV Data", icon = icon("download"), class = "btn-lg btn-primary", style = "font-weight: 600; padding: 10px 22px; font-size: 15px; border-radius: 6px;"),
                                                                          uiOutput("bintable_gene_note"),
                                                                          uiOutput("bintable_promoter_note")),
                                                                      div(style = "margin-top:4px;", DTOutput("bintable")))),
+                                         
+                                         # 6b. Alu Table (same layout as Bin Table, one row per individual Alu element)
+                                         nav_panel("Alu Table", card(card_header(div(style = "display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;",
+                                                                                     div(style = "display:flex; align-items:center; gap:8px;", bs_icon("table"), "Filterable Alu-level Data"),
+                                                                                     uiOutput("alutable_count_badge"))),
+                                                                     div(style = "font-size:13px; color:#6c757d; margin-bottom:10px;",
+                                                                         "Same idea as the Bin Table, but at the resolution of individual Alu elements rather than 1\u00a0Mb bins. The promoter column is inherited from each Alu's parent bin (see Alu_Table_Preprocessing_alus.R)."),
+                                                                     tags$details(style = "background:#ffffff; border:1px solid #d8e0e6; border-radius:10px; padding:0; margin-bottom:20px; box-shadow:0 1px 4px rgba(22,50,79,0.08); overflow:hidden;",
+                                                                                  tags$summary(style = "font-weight:700; font-size:14.5px; color:#ffffff; background:#16324f; cursor:pointer; display:flex; align-items:center; gap:8px; padding:12px 18px; list-style:none;", bs_icon("sliders", size = "1.1em"), "Filter Alu Metrics",
+                                                                                               tags$span(style = "margin-left:auto; font-weight:400; font-size:11px; color:#c7d2da;", "Click to expand / collapse")),
+                                                                                  div(style = "padding:18px 20px 20px 20px;",
+                                                                                      div(style = "margin-bottom:16px;",
+                                                                                          div(style = "display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:8px;",
+                                                                                              tags$span(style = "font-weight:700; font-size:11.5px; text-transform:uppercase; letter-spacing:0.6px; color:#7d92a3; display:flex; align-items:center; gap:6px;",
+                                                                                                        bs_icon("bar-chart-steps"), "Chromosome"),
+                                                                                              div(style = "display:flex; gap:6px;", actionButton("alufilter_chr_all", "Select all", class = "btn-sm btn-outline-secondary", style = "font-size:11px; padding:2px 10px; border-radius:5px;"), actionButton("alufilter_chr_clear", "Clear", class = "btn-sm btn-outline-secondary", style = "font-size:11px; padding:2px 10px; border-radius:5px;"))),
+                                                                                          div(style = "background:#f7f9fa; border:1px solid #e7ecef; border-radius:8px; padding:10px 12px;", checkboxGroupInput("alufilter_chr", label = NULL, choices = chrom_list, selected = "1", inline = TRUE)),
+                                                                                          tags$div("Defaults to chromosome 1 only \u2014 with ~945k Alus genome-wide, selecting every chromosome at once makes the table slow to filter/sort.", style = "font-size:11px; color:#7d92a3; margin-top:4px;")),
+                                                                                      tags$hr(style = "border-top:1px solid #eef2f5; margin:14px 0;"),
+                                                                                      tags$div(style = "font-weight:700; font-size:11.5px; text-transform:uppercase; letter-spacing:0.6px; color:#7d92a3; margin-bottom:10px; display:flex; align-items:center; gap:6px;", bs_icon("sliders2"), "Methylation Metrics"),
+                                                                                      div(style = "display:flex; flex-wrap:wrap; gap:16px; align-items:flex-start;",
+                                                                                          build_bin_table_filter_inputs(alu_table_filters, alu_table, prefix = "alufilter_")),
+                                                                                      tags$hr(style = "border-top:1px solid #eef2f5; margin:18px 0 14px 0;"),
+                                                                                      div(style = "display:flex; justify-content:flex-end;", actionButton("alufilter_reset", label = tagList(bs_icon("arrow-counterclockwise"), "Reset all filters"), class = "btn-sm btn-outline-danger", style = "font-size:12px; border-radius:6px; padding:5px 14px;")))),
+                                                                     div(style = "display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:15px;", downloadButton("alutable_download", "Download CSV Data", icon = icon("download"), class = "btn-lg btn-primary", style = "font-weight: 600; padding: 10px 22px; font-size: 15px; border-radius: 6px;"),
+                                                                         uiOutput("alutable_promoter_note")),
+                                                                     div(style = "margin-top:4px;", DTOutput("alutable")))),
                                          
                                          # 7. Tumor vs Normal
                                          nav_panel("Tumor vs. Normal", navset_tab(
@@ -1234,6 +1437,65 @@ server <- function(input, output, session) {
     bin_table[bin_table$bin_id %in% selected_bins(), ]
   })
   
+  # "Selected Alus:" identical pattern to "Selected bins:"
+  alus_choices_for_chr <- function(chr, extra = character(0)) {
+    union(alu_choices_by_chr[[chr]], extra)
+  }
+  
+  updateSelectizeInput(session, "alus", choices = alus_choices_for_chr(isolate(input$chr)), selected = character(0), server = TRUE)
+  
+  # picking a different chromosome re-scopes the "Selected Alus" search to that chromosome too
+  observeEvent(input$chr, {
+    updateSelectizeInput(session, "alus", choices = alus_choices_for_chr(input$chr, input$alus), selected = input$alus, server = TRUE)
+  }, ignoreInit = TRUE)
+  
+  observeEvent(input$add_chr_alus, {
+    chr_alus <- alu_choices_by_chr[[input$chr]]
+    updated <- union(input$alus, chr_alus)
+    updateSelectizeInput(session, "alus", choices = alus_choices_for_chr(input$chr, updated), selected = updated, server = TRUE)
+    # a whole chromosome can hold tens of thousands of Alus (chr1 has ~82k) - just a heads-up, selection still goes through
+    if (length(chr_alus) > 5000) {
+      showNotification(sprintf("Added all %s Alus on chromosome %s. That's a lot to plot/filter at once - consider narrowing down further.",
+                               format(length(chr_alus), big.mark = ","), input$chr), type = "warning", duration = 10)
+    }
+  })
+  
+  observeEvent(input$clear_alus, {
+    updateSelectizeInput(session, "alus", choices = alus_choices_for_chr(input$chr), selected = character(0), server = TRUE)
+  })
+  
+  observeEvent(input$alus_file, {
+    req(input$alus_file)
+    res <- parse_alu_file(input$alus_file$datapath, input$alus_file$name, alu_table, chrom_list)
+    if (length(res$matched) == 0) {
+      showNotification("Couldn't match any Alus in file.", type = "error", duration = 7)
+      return()
+    }
+    updated <- union(input$alus, res$matched)
+    updateSelectizeInput(session, "alus", choices = alus_choices_for_chr(input$chr, updated), selected = updated, server = TRUE)
+    n_unmatched <- length(res$unmatched)
+    if (n_unmatched == 0) {
+      showNotification(
+        sprintf("All %d Alu ID(s) in the file matched and were added to your selection.", length(res$matched)),
+        type = "message", duration = 7)
+    } else {
+      preview <- paste(utils::head(res$unmatched, 10), collapse = ", ")
+      more <- if (n_unmatched > 10) sprintf(" (+%d more)", n_unmatched - 10) else ""
+      showNotification(
+        sprintf("Selected %d matching Alu(s). %d ID(s) from the file don't exist in this dataset and were skipped: %s%s",
+                length(res$matched), n_unmatched, preview, more),
+        type = "warning", duration = 15)
+    }
+  })
+  
+  selected_alus <- reactive({
+    if (length(input$alus) > 0) input$alus else alu_choices_by_chr[[input$chr]]
+  })
+  
+  selected_alu_table <- reactive({
+    alu_table[alu_table$alu_id %in% selected_alus(), ]
+  })
+  
   observeEvent(input$binfilter_chr_all, {
     updateCheckboxGroupInput(session, "binfilter_chr", selected = chrom_list)
   })
@@ -1259,6 +1521,42 @@ server <- function(input, output, session) {
       } else 0
       updateSliderInput(session, paste0("binfilter_", f$id), value = lo)
     }
+  })
+  
+  observeEvent(input$alufilter_chr_all, {
+    updateCheckboxGroupInput(session, "alufilter_chr", selected = chrom_list)
+  })
+  
+  observeEvent(input$alufilter_chr_clear, {
+    updateCheckboxGroupInput(session, "alufilter_chr", selected = character(0))
+  })
+  
+  # resets every Alu Table filter back to its default (chromosome 1 only, see UI note above)
+  observeEvent(input$alufilter_reset, {
+    updateCheckboxGroupInput(session, "alufilter_chr", selected = "1")
+    for (f in alu_table_filters) {
+      vals <- alu_table[[f$id]]
+      vals <- vals[is.finite(vals)]
+      step <- if (!is.null(f$step)) f$step else 0.01
+      lo <- if (length(vals) > 0) {
+        if (step >= 1) floor(min(vals)) else floor(min(vals) * 100) / 100
+      } else 0
+      updateSliderInput(session, paste0("alufilter_", f$id), value = lo)
+    }
+  })
+  
+  # Alu Table tab has its own filter panel, independent of the sidebar's Alu selection
+  filtered_alu_table <- reactive({
+    apply_bin_table_filters(alu_table, alu_table_filters, input, prefix = "alufilter_",
+                            chr_input_id = "alufilter_chr", gene_input_id = NULL)
+  })
+  
+  # live "N of TOTAL alus" badge shown in the Alu Table card header
+  output$alutable_count_badge <- renderUI({
+    n <- nrow(filtered_alu_table())
+    total <- nrow(alu_table)
+    span(style = "font-size:12px; font-weight:600; color:#16324f; background:#eef2f5; border:1px solid #d8e0e6; border-radius:20px; padding:4px 12px; white-space:nowrap;",
+         paste0(format(n, big.mark = ","), " of ", format(total, big.mark = ","), " Alus"))
   })
   
   # Bin Table tab has its own filter panel
@@ -1340,7 +1638,7 @@ server <- function(input, output, session) {
         card(card_header(
           div(style = "display:flex; justify-content:space-between; align-items:center; width:100%;",
               tags$span(pm$title),
-              actionButton(paste0("expand_", pm$id), NULL, icon = bs_icon("arrows-fullscreen"),class = "btn-sm btn-outline-secondary", title = "Expand", style = "padding:2px 7px; margin-left:auto; margin-right:-5px;"))),
+              actionButton(paste0("expand_", pm$id), label = bs_icon("arrows-fullscreen"), class = "btn-sm btn-outline-secondary", title = "Expand", style = "padding:2px 7px; margin-left:auto; margin-right:-5px;"))),
           plotOutput(pm$id, height = "calc(max(230px, min(34vh, 320px)))", click = paste0(pm$id, "_click")),
           plot_export_ui(pm$id),
           plot_desc(pm$desc)) # Show graphs descriptions
@@ -1353,7 +1651,7 @@ server <- function(input, output, session) {
       meta <- Filter(function(pm) identical(pm$id, zoom), overview_plot_meta)[[1]]
       tagList(
         div(style = "margin-bottom:10px;",
-            actionButton("overview_back", "Go back to Overview", icon = bs_icon("arrow-left-circle"), class = "btn-sm btn-outline-primary")),
+            actionButton("overview_back", label = tagList(bs_icon("arrow-left-circle"), "Go back to Overview"), class = "btn-sm btn-outline-primary")),
         card(card_header(meta$title), plotOutput(meta$id, height = "calc(max(360px, min(64vh, 640px)))"), plot_export_ui(meta$id)))
     }
   })
@@ -1584,6 +1882,43 @@ server <- function(input, output, session) {
     updateSelectInput(session, "browser_chr", selected = ed$customdata[1])
   })
   
+  # "View selected Alus in Genome Browser" (sidebar button)
+  observeEvent(input$view_alus_browser, {
+    if (length(input$alus) == 0) {
+      showNotification("Select one or more Alus in the sidebar first.", type = "warning", duration = 5)
+      return()
+    }
+    sel <- alu_table[alu_table$alu_id %in% input$alus, ]
+    req(nrow(sel) > 0)
+    chr <- sel$chr[1]
+    if (length(unique(sel$chr)) > 1) {
+      showNotification("Selected Alus span more than one chromosome; jumping to the range on the first one only.", type = "warning", duration = 6)
+      sel <- sel[sel$chr == chr, ]
+    }
+    span <- max(sel$alu_end) - min(sel$alu_start)
+    pad <- max(2000, span * 0.15)
+    nav$chr <- chr # set this first so the browser_chr observer above sees it and skips its reset
+    nav$start <- max(1, min(sel$alu_start) - pad)
+    nav$end <- min(chrom_lengths[[chr]], max(sel$alu_end) + pad)
+    if (!identical(input$browser_chr, chr)) updateSelectInput(session, "browser_chr", selected = chr)
+    nav_select("main_nav", selected = "Genome Browser", session = session)
+    showNotification(paste0("Jumped to ", format(nrow(sel), big.mark = ","), " selected Alu(s) on chr", chr), type = "message", duration = 4)
+  })
+  
+  # clicking the "Genome Browser" quick link on a single Alu Table row jumps straight to that Alu
+  observeEvent(input$jump_to_alu, {
+    req(input$jump_to_alu$id)
+    row <- alu_table[alu_table$alu_id == input$jump_to_alu$id, ]
+    if (nrow(row) != 1) return()
+    pad <- max(1500, (row$alu_end - row$alu_start) * 2)
+    nav$chr <- row$chr[1] # set this first so the browser_chr observer above sees it and skips its reset
+    nav$start <- max(1, row$alu_start - pad)
+    nav$end <- min(chrom_lengths[[row$chr[1]]], row$alu_end + pad)
+    if (!identical(input$browser_chr, row$chr[1])) updateSelectInput(session, "browser_chr", selected = row$chr[1])
+    nav_select("main_nav", selected = "Genome Browser", session = session)
+    showNotification(paste0("Jumped to Alu ", row$alu_id[1]), type = "message", duration = 3)
+  })
+  
   output$browser_position_header <- renderText({
     req(nav$chr, nav$start, nav$end)
     paste0("Genome Browser - chr", nav$chr, ": ",
@@ -1610,6 +1945,16 @@ server <- function(input, output, session) {
     df[order(df$bin_position), ]
   })
   
+  # Alu elements visible in the current Genome Browser window
+  browser_view_alus <- reactive({
+    req(nav$chr, nav$start, nav$end)
+    if (isFALSE(input$browser_show_alus)) return(alu_table[0, ])
+    df <- alu_table[alu_table$chr == nav$chr & alu_table$alu_end >= nav$start & alu_table$alu_start <= nav$end, ]
+    df <- df[order(df$alu_start), ]
+    if (nrow(df) > 4000) df <- df[seq(1, nrow(df), length.out = 4000), ]
+    df
+  })
+  
   output$genome_overview_plot <- renderPlotly({
     df <- genome_wide_bins
     p <- plot_ly(df, x = ~genome_x, y = ~overall_meth, color = ~chr_parity, colors = c("#16324f", "#0e7c86"), customdata = ~as.character(chr),
@@ -1629,6 +1974,22 @@ server <- function(input, output, session) {
     df[df$Type %in% c("Tumor", "Normal"), ]
   })
   
+  # adds a row of Alu ticks along the bottom of a Genome Browser plot
+  add_alu_track <- function(p, alus_now, y_base) {
+    if (nrow(alus_now) == 0) return(p)
+    hl <- alus_now$alu_id %in% input$alus
+    add_trace(p, data = alus_now, x = ~(alu_start + alu_end) / 2 / 1e6, y = rep(y_base, nrow(alus_now)),
+              type = "scatter", mode = "markers", name = "Alu",
+              marker = list(symbol = "line-ns-open",
+                            size = ifelse(hl, 16, 9),
+                            color = ifelse(hl, "#e0a339", "#8aa0b0"),
+                            line = list(width = ifelse(hl, 2.5, 1.3), color = ifelse(hl, "#e0a339", "#8aa0b0"))),
+              text = ~paste0("Alu ", alu_id, "<br>", alu_coordinates,
+                             ifelse(is.na(gene_names), "", paste0("<br>Gene: ", gene_names)),
+                             "<br>\u0394 (Tumor \u2212 Normal): ", round(tumor_normal_diff, 3)),
+              hoverinfo = "text")
+  }
+  
   output$browser_chr_plot <- renderPlotly({
     if (view_by_samples()) {
       df <- browser_view_samples()
@@ -1638,8 +1999,7 @@ server <- function(input, output, session) {
             layout(title = list(text = "No bins in this region", font = list(size = 14))) |>
             config(displayModeBar = FALSE, responsive = TRUE))
       }
-      # highlight only bins explicitly picked in the sidebar's "Selected bins" list -- deliberately
-      # NOT selected_bins()'s whole-chromosome fallback, so an empty pick shows no highlighting here
+      # highlight only bins explicitly picked in the sidebar's "Selected bins" list
       hl <- df$bin_id %in% input$bins
       base_size <- max(3, min(8, 4000 / nrow(df)))
       hl_size <- base_size + 4
@@ -1655,10 +2015,11 @@ server <- function(input, output, session) {
                        text = ~paste0(bin_id, "<br>Sample: ", sample_id, "<br>Patient: ", patient_id, "<br>", ty, ": ", round(methylation, 3)),
                        hoverinfo = "text")
       }
+      p <- add_alu_track(p, browser_view_alus(), y_base = -0.06)
       p |>
         layout(xaxis = list(title = paste0("Position on chr", nav$chr, " (Mb)"), automargin = TRUE,
                             rangeslider = list(visible = TRUE, thickness = 0.08, bgcolor = "#eef2f5", bordercolor = "#d8e0e6", borderwidth = 1)),
-               yaxis = list(title = "Methylation (per sample)", range = c(0, 1), automargin = TRUE),
+               yaxis = list(title = "Methylation (per sample)", range = c(-0.1, 1), automargin = TRUE),
                legend = list(orientation = "h", x = 0.5, xanchor = "center", y = 1, yanchor = "bottom"),
                hovermode = "closest",
                margin = list(t = 50, r = 20, b = 50, l = 55),
@@ -1676,16 +2037,18 @@ server <- function(input, output, session) {
       hl <- df$bin_id %in% input$bins
       base_size <- max(4, min(9, 700 / nrow(df)))
       hl_size <- base_size + 5
-      plot_ly(df, x = ~bin_position / 1e6) |>
+      p <- plot_ly(df, x = ~bin_position / 1e6) |>
         add_trace(y = ~mean_methylation_tumor, type = "scatter", mode = "lines+markers", name = "Tumor",line = list(color = "#d1495b", width = 1.6),
                   marker = list(color = "#d1495b", size = ifelse(hl, hl_size, base_size), line = list(color = "#0b2436", width = ifelse(hl, 1.5, 0))),
                   text = ~paste0(bin_id, "<br>Tumor mean: ", round(mean_methylation_tumor, 3)), hoverinfo = "text") |>
         add_trace(y = ~mean_methylation_normal, type = "scatter", mode = "lines+markers", name = "Normal",
                   line = list(color = "#3aa9c9", width = 1.6), marker = list(color = "#3aa9c9", size = ifelse(hl, hl_size, base_size),line = list(color = "#0b2436", width = ifelse(hl, 1.5, 0))),
-                  text = ~paste0(bin_id, "<br>Normal mean: ", round(mean_methylation_normal, 3)), hoverinfo = "text") |>
+                  text = ~paste0(bin_id, "<br>Normal mean: ", round(mean_methylation_normal, 3)), hoverinfo = "text")
+      p <- add_alu_track(p, browser_view_alus(), y_base = -0.06)
+      p |>
         layout(xaxis = list(title = paste0("Position on chr", nav$chr, " (Mb)"), automargin = TRUE,
                             rangeslider = list(visible = TRUE, thickness = 0.08, bgcolor = "#eef2f5", bordercolor = "#d8e0e6", borderwidth = 1)),
-               yaxis = list(title = "Mean methylation", range = c(0, 1), automargin = TRUE),
+               yaxis = list(title = "Mean methylation", range = c(-0.1, 1), automargin = TRUE),
                legend = list(orientation = "h", x = 0.5, xanchor = "center", y = 1, yanchor = "bottom"),
                hovermode = "x unified",
                margin = list(t = 50, r = 20, b = 50, l = 55),
@@ -2239,7 +2602,7 @@ server <- function(input, output, session) {
         div(style = "display:flex; align-items:center; gap:8px; font-weight:700; color:#16324f;",
             bs_icon("person-check-fill", size = "1.3em"), paste0("Patient ", sel_id)),
         lapply(chip_cols, chip),
-        actionButton("clear_patient_selection", "Clear selection", icon = bs_icon("x-circle"),
+        actionButton("clear_patient_selection", label = tagList(bs_icon("x-circle"), "Clear selection"),
                      class = "btn-sm btn-outline-secondary", style = "margin-left:auto;"))
   })
   
@@ -2293,6 +2656,42 @@ server <- function(input, output, session) {
   
   output$bintable_download <- downloadHandler(filename = function() {"bintable.csv"},content = function(file) {
     write.csv(build_display_bin_table(filtered_bin_table(), plain = TRUE), file, row.names = FALSE)
+  })
+  
+  # 6b. Alu Table
+  
+  output$alutable_promoter_note <- renderUI({
+    if (!alu_promoter_annotation_available) {
+      return(div(style = "font-size:12px; color:#a34; background:#fdf1ef; border:1px solid #f0d6d1; border-radius:8px; padding:8px 14px; max-width:520px;",
+                 bs_icon("exclamation-triangle"), " Promoter annotation source file was not found when the app started"))
+    }
+  })
+  
+  output$alutable <- renderDT({
+    display_df <- build_display_bin_table(attach_alu_quick_links(filtered_alu_table()), columns = alu_table_columns)
+    meth_cols  <- intersect(c("Tumor Mean", "Normal Mean", "Tumor SD", "Normal SD", "\u0394 (Tumor \u2212 Normal)", "Prevalence (all samples)"), names(display_df))
+    count_cols <- intersect(c("Promoter Count"), names(display_df))
+    delta_col  <- "\u0394 (Tumor \u2212 Normal)"
+    links_col  <- which(names(display_df) == "Quick Links")
+    
+    dt <- datatable(display_df,
+                    container = alu_table_header_sketch,
+                    rownames = FALSE,
+                    class = "stripe hover compact",
+                    escape = if (length(links_col) > 0) -links_col else TRUE,
+                    options = list(scrollX = TRUE, pageLength = 15, lengthMenu = list(c(10, 15, 25, 50, -1), c("10", "15", "25", "50", "All")), dom = "ltip", language = list(search = "Quick search:", lengthMenu = "Show _MENU_ Alus per page"), columnDefs = list(list(className = "dt-center", targets = "_all"))))
+    
+    if (length(meth_cols) > 0) dt <- formatRound(dt, meth_cols, 3)
+    if (length(count_cols) > 0) dt <- formatRound(dt, count_cols, 0)
+    
+    if (delta_col %in% names(display_df)) {
+      dt <- formatStyle(dt, delta_col, fontWeight = "600", color = styleInterval(0, c("#0e7c86", "#d1495b")))
+    }
+    dt
+  })
+  
+  output$alutable_download <- downloadHandler(filename = function() {"alutable.csv"}, content = function(file) {
+    write.csv(build_display_bin_table(attach_alu_quick_links(filtered_alu_table()), columns = alu_table_columns, plain = TRUE), file, row.names = FALSE)
   })
 }
 
