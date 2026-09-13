@@ -312,7 +312,9 @@ get_bin_stats <- function() {
   get("bin_stats", envir = .app_cache, inherits = FALSE)
 }
 
-# Base genome-wide table
+# Base genome-wide table is cheap and is kept separate from the patient-level
+# statistics. The expensive statistics are only calculated if the Manhattan
+# plot actually needs them.
 get_genome_wide_bins <- function(include_stats = FALSE) {
   if (!exists("genome_wide_bins_base", envir = .app_cache, inherits = FALSE)) {
     gw <- bin_table
@@ -1422,7 +1424,7 @@ ui <- page_sidebar(title = div(style = "display:flex; justify-content:space-betw
                                                                                      uiOutput("alutable_count_badge"))),
                                                                      div(style = "font-size:13px; color:#6c757d; margin-bottom:10px;",
                                                                          "Same idea as the Bin Table, but at the resolution of individual Alu elements rather than 1\u00a0Mb bins. The promoter column is inherited from each Alu's parent bin (see Alu_Table_Preprocessing_alus.R)."),
-                                                                     tags$details(style = "background:#ffffff; border:1px solid #d8e0e6; border-radius:10px; padding:0; margin-bottom:20px; box-shadow:0 1px 4px rgba(22,50,79,0.08); overflow:hidden;",
+                                                                     tags$details(open = "open", style = "background:#ffffff; border:1px solid #d8e0e6; border-radius:10px; padding:0; margin-bottom:20px; box-shadow:0 1px 4px rgba(22,50,79,0.08); overflow:hidden;",
                                                                                   tags$summary(style = "font-weight:700; font-size:14.5px; color:#ffffff; background:#16324f; cursor:pointer; display:flex; align-items:center; gap:8px; padding:12px 18px; list-style:none;", bs_icon("sliders", size = "1.1em"), "Filter Alu Metrics",
                                                                                                tags$span(style = "margin-left:auto; font-weight:400; font-size:11px; color:#c7d2da;", "Click to expand / collapse")),
                                                                                   div(style = "padding:18px 20px 20px 20px;",
@@ -2376,6 +2378,7 @@ server <- function(input, output, session) {
       layout(xaxis = list(title = "", tickvals = as.numeric(chr_mid), ticktext = chrom_list, tickangle = 45),
              yaxis = list(title = "Methylation difference (Tumor \u2212 Normal)", zeroline = TRUE, zerolinewidth = 1.4, zerolinecolor = "#16324f"),
              shapes = chr_boundary_shapes,
+             dragmode = FALSE,
              legend = list(orientation = "h", x = 0, y = 1.12),
              hovermode = "closest") |>
       config(displayModeBar = TRUE,
